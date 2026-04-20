@@ -102,11 +102,33 @@ def _apply_torch24_compat_patches():
 
     _orig_sdpa = F.scaled_dot_product_attention
 
-    def _sdpa_no_gqa(*args, **kwargs):
-        kwargs.pop("enable_gqa", None)
-        return _orig_sdpa(*args, **kwargs)
+    def _sdpa_gqa_compat(*args, **kwargs):
+        """Implement enable_gqa=True for torch 2.4 by repeat-interleaving K/V heads.
 
-    F.scaled_dot_product_attention = _sdpa_no_gqa
+        PyTorch 2.5 added the `enable_gqa` kwarg which tells SDPA that KV has
+        fewer heads than Q (Grouped-Query Attention). On 2.4 the kwarg is
+        unknown AND the dimension check fails. Simulate it by broadcasting
+        K and V to match Q's head count before calling SDPA.
+        """
+        enable_gqa = kwargs.pop("enable_gqa", False)
+        if not enable_gqa:
+            return _orig_sdpa(*args, **kwargs)
+
+        # Positional args order: query, key, value, attn_mask?, dropout_p?, is_causal?, scale?
+        if len(args) < 3:
+            return _orig_sdpa(*args, **kwargs)
+        query, key, value = args[0], args[1], args[2]
+        rest = args[3:]
+
+        q_heads = query.shape[-3]
+        kv_heads = key.shape[-3]
+        if kv_heads > 0 and q_heads % kv_heads == 0 and q_heads != kv_heads:
+            repeat = q_heads // kv_heads
+            key = key.repeat_interleave(repeat, dim=-3)
+            value = value.repeat_interleave(repeat, dim=-3)
+        return _orig_sdpa(query, key, value, *rest, **kwargs)
+
+    F.scaled_dot_product_attention = _sdpa_gqa_compat
 
 
 # ---------------------------------------------------------------------------
