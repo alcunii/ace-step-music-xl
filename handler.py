@@ -246,7 +246,7 @@ def _validate_audio_file(path: str) -> None:
     """Raise ValueError if path isn't decodable audio or too long."""
     try:
         import soundfile as sf
-    except ImportError as e:
+    except ImportError as e:  # pragma: no cover
         raise ValueError("soundfile not installed; cannot validate audio") from e
     try:
         info = sf.info(path)

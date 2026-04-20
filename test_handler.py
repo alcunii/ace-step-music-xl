@@ -586,3 +586,75 @@ class TestHandlerAudioInputTasks:
             assert "error" not in result, f"{task}: {result}"
             assert set(result.keys()) == expected, f"{task} key mismatch"
             assert result["task_type"] == task, f"{task} echo mismatch"
+
+
+# ---------------------------------------------------------------------------
+# TestLoadModelsFailures — coverage for load_models() failure branches
+# ---------------------------------------------------------------------------
+class TestLoadModelsFailures:
+    """Verify RuntimeError is raised when init sub-steps report failure."""
+
+    def test_download_main_model_failure_raises(self):
+        sys.modules.pop("handler", None)
+        dl = sys.modules["acestep.model_downloader"]
+        dl.ensure_main_model.return_value = (False, "hf down")
+        try:
+            with pytest.raises(RuntimeError, match="Failed to download main model"):
+                importlib.import_module("handler")
+        finally:
+            dl.ensure_main_model.return_value = (True, "ok")
+
+    def test_download_dit_model_failure_raises(self):
+        sys.modules.pop("handler", None)
+        dl = sys.modules["acestep.model_downloader"]
+        dl.ensure_dit_model.return_value = (False, "dit down")
+        try:
+            with pytest.raises(RuntimeError, match="Failed to download DiT model"):
+                importlib.import_module("handler")
+        finally:
+            dl.ensure_dit_model.return_value = (True, "ok")
+
+    def test_dit_init_failure_raises(self):
+        sys.modules.pop("handler", None)
+        ace_cls = sys.modules["acestep.handler"].AceStepHandler
+        ace_cls.return_value.initialize_service.return_value = ("boom", False)
+        try:
+            with pytest.raises(RuntimeError, match="DiT init failed"):
+                importlib.import_module("handler")
+        finally:
+            ace_cls.return_value.initialize_service.return_value = ("ok", True)
+
+    def test_lm_init_failure_raises(self):
+        sys.modules.pop("handler", None)
+        llm_cls = sys.modules["acestep.llm_inference"].LLMHandler
+        llm_cls.return_value.initialize.return_value = ("llm boom", False)
+        try:
+            with pytest.raises(RuntimeError, match="LM init failed"):
+                importlib.import_module("handler")
+        finally:
+            llm_cls.return_value.initialize.return_value = ("ok", True)
+
+
+# ---------------------------------------------------------------------------
+# TestHandlerErrorBranches — coverage for handler() error paths
+# ---------------------------------------------------------------------------
+class TestHandlerErrorBranches:
+    """Cover the 'no audio returned' and 'unhandled exception' branches."""
+
+    def test_no_audio_returned_errors(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        gen_mock.side_effect = None
+        gen_mock.return_value = FakeGenerationResult(success=True, audios=[])
+        result = handler_fn({"input": {"prompt": "x"}})
+        assert "error" in result
+        assert "No audio" in result["error"]
+
+    def test_unhandled_exception_returns_internal_error(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        gen_mock.side_effect = RuntimeError("unexpected kaboom")
+        result = handler_fn({"input": {"prompt": "x"}})
+        assert "error" in result
+        assert "Internal error" in result["error"]
+        assert "kaboom" in result["error"]
