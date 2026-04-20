@@ -24,7 +24,7 @@ import urllib.request
 TASKS = ["text2music", "cover", "repaint", "extract", "lego", "complete"]
 
 # Default public fixture for --all; override with --src-url if needed.
-DEFAULT_FIXTURE_URL = "https://github.com/ace-step/ACE-Step-1.5/raw/main/assets/demo_audio/main.mp3"
+DEFAULT_FIXTURE_URL = "https://github.com/alcunii/ace-step-music-xl/raw/main/fixtures/short.mp3"
 
 
 def build_payload(args) -> dict:
