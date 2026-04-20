@@ -1,0 +1,12 @@
+.git
+__pycache__
+*.pyc
+.pytest_cache
+.env
+.env.*
+docs/
+fixtures/
+test_handler.py
+test_workflow.py
+test_endpoint.py
+*.md
