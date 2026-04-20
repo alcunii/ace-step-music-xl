@@ -177,6 +177,58 @@ def load_models():
 
 
 # ---------------------------------------------------------------------------
+# Task-type schema
+# ---------------------------------------------------------------------------
+# Required fields keyed by task_type. "_src_audio" means "at least one of
+# src_audio_url or src_audio_base64 must be present".
+TASK_REQUIRED = {
+    "text2music": ["prompt"],
+    "cover":      ["prompt", "_src_audio"],
+    "repaint":    ["prompt", "_src_audio", "repainting_start", "repainting_end"],
+    "extract":    ["instruction", "_src_audio"],
+    "lego":       ["prompt", "_src_audio", "repainting_start", "repainting_end"],
+    "complete":   ["prompt", "_src_audio"],
+}
+
+
+def _validate(job_input: dict) -> Optional[dict]:
+    """Return None if input is OK, else an error dict suitable for RunPod."""
+    task_type = job_input.get("task_type", "text2music")
+    if task_type not in VALID_TASK_TYPES:
+        return {
+            "error": f"unknown task_type {task_type!r}; "
+                     f"valid: {sorted(VALID_TASK_TYPES)}"
+        }
+
+    audio_format = job_input.get("audio_format", "mp3")
+    if audio_format not in VALID_AUDIO_FORMATS:
+        return {
+            "error": f"invalid audio_format {audio_format!r}; "
+                     f"valid: {sorted(VALID_AUDIO_FORMATS)}"
+        }
+
+    required = TASK_REQUIRED[task_type]
+    missing = []
+    for field in required:
+        if field == "_src_audio":
+            has_url = bool(job_input.get("src_audio_url"))
+            has_b64 = bool(job_input.get("src_audio_base64"))
+            if not (has_url or has_b64):
+                missing.append("src_audio_url or src_audio_base64")
+            continue
+        val = job_input.get(field)
+        if val is None or (isinstance(val, str) and not val.strip()):
+            missing.append(field)
+
+    if missing:
+        return {
+            "error": f"task_type={task_type!r} missing required fields: "
+                     + ", ".join(missing)
+        }
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Source audio resolver
 # ---------------------------------------------------------------------------
 def _write_tempfile(data: bytes, suffix: str = ".audio") -> str:

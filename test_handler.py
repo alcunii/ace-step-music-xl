@@ -295,3 +295,80 @@ class TestResolveSrcAudioUrl:
         with open(path, "rb") as f:
             assert f.read() == url_bytes
         os.unlink(path)
+
+
+# ---------------------------------------------------------------------------
+# TestSchemaValidation
+# ---------------------------------------------------------------------------
+class TestSchemaValidation:
+    def _call(self, job_input: dict):
+        mod = _import_handler_module()
+        return mod._validate(job_input)
+
+    def test_unknown_task_type_errors(self):
+        err = self._call({"task_type": "mystery", "prompt": "x"})
+        assert err is not None
+        assert "task_type" in err["error"].lower()
+
+    def test_text2music_missing_prompt(self):
+        err = self._call({"task_type": "text2music"})
+        assert err is not None
+        assert "prompt" in err["error"].lower()
+
+    def test_text2music_happy_path(self):
+        err = self._call({"task_type": "text2music", "prompt": "p"})
+        assert err is None
+
+    def test_cover_missing_src_audio(self):
+        err = self._call({"task_type": "cover", "prompt": "p"})
+        assert err is not None
+        assert "src_audio" in err["error"].lower()
+
+    def test_cover_missing_prompt(self):
+        err = self._call({"task_type": "cover", "src_audio_base64": "x"})
+        assert err is not None
+        assert "prompt" in err["error"].lower()
+
+    def test_repaint_missing_start_end(self):
+        err = self._call({
+            "task_type": "repaint",
+            "prompt": "p",
+            "src_audio_base64": "x",
+        })
+        assert err is not None
+        assert "repainting" in err["error"].lower()
+
+    def test_extract_missing_instruction(self):
+        err = self._call({
+            "task_type": "extract",
+            "src_audio_base64": "x",
+        })
+        assert err is not None
+        assert "instruction" in err["error"].lower()
+
+    def test_lego_happy_path(self):
+        err = self._call({
+            "task_type": "lego",
+            "prompt": "p",
+            "src_audio_base64": "x",
+            "repainting_start": 0,
+            "repainting_end": 10,
+        })
+        assert err is None
+
+    def test_complete_missing_prompt(self):
+        err = self._call({
+            "task_type": "complete",
+            "src_audio_base64": "x",
+        })
+        assert err is not None
+        assert "prompt" in err["error"].lower()
+
+    def test_audio_format_invalid(self):
+        err = self._call({
+            "task_type": "text2music",
+            "prompt": "p",
+            "audio_format": "ogg",
+        })
+        assert err is not None
+        assert "audio_format" in err["error"].lower()
