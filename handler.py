@@ -34,8 +34,13 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = os.environ.get("ACESTEP_PROJECT_ROOT", "/app/ACE-Step-1.5")
 DIT_CONFIG = os.environ.get("ACESTEP_CONFIG_PATH", "acestep-v15-xl-base")
 CHECKPOINT_DIR = os.environ.get(
-    "ACESTEP_CHECKPOINT_DIR", "/runpod-volume/checkpoints"
+    "ACESTEP_CHECKPOINTS_DIR",
+    os.environ.get("ACESTEP_CHECKPOINT_DIR", "/runpod-volume/checkpoints"),
 )
+# The upstream ACE-Step package reads ACESTEP_CHECKPOINTS_DIR (plural) inside
+# AceStepHandler.initialize_service — not the checkpoints_dir kwarg. Set it
+# here so both the downloader and the service use the same path.
+os.environ["ACESTEP_CHECKPOINTS_DIR"] = CHECKPOINT_DIR
 LM_MODEL = os.environ.get("ACESTEP_LM_MODEL_PATH", "acestep-5Hz-lm-1.7B")
 LM_BACKEND = os.environ.get("ACESTEP_LM_BACKEND", "vllm")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"

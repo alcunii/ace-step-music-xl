@@ -62,7 +62,7 @@ COPY handler.py /app/handler.py
 # ── XL-specific environment ──
 ENV ACESTEP_PROJECT_ROOT=/app/ACE-Step-1.5
 ENV ACESTEP_CONFIG_PATH=acestep-v15-xl-base
-ENV ACESTEP_CHECKPOINT_DIR=/runpod-volume/checkpoints
+ENV ACESTEP_CHECKPOINTS_DIR=/runpod-volume/checkpoints
 ENV ACESTEP_LM_MODEL_PATH=acestep-5Hz-lm-1.7B
 ENV ACESTEP_LM_BACKEND=vllm
 ENV PYTHONUNBUFFERED=1
