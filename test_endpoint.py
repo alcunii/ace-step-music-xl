@@ -71,6 +71,7 @@ def call_endpoint(endpoint_id: str, api_key: str, payload: dict, timeout: int) -
         sys.exit(1)
 
     # Poll if still pending
+    consecutive_404s = 0
     while result.get("status") in ("IN_QUEUE", "IN_PROGRESS"):
         job_id = result["id"]
         status_url = f"https://api.runpod.ai/v2/{endpoint_id}/status/{job_id}"
@@ -78,8 +79,20 @@ def call_endpoint(endpoint_id: str, api_key: str, payload: dict, timeout: int) -
         status_req = urllib.request.Request(
             status_url, headers={"Authorization": f"Bearer {api_key}"}
         )
-        with urllib.request.urlopen(status_req, timeout=30) as resp:
-            result = json.loads(resp.read())
+        try:
+            with urllib.request.urlopen(status_req, timeout=30) as resp:
+                result = json.loads(resp.read())
+            consecutive_404s = 0
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                consecutive_404s += 1
+                print(f"  status: (transient 404, retry {consecutive_404s}/6)")
+                if consecutive_404s >= 6:
+                    print("Too many 404s — giving up on this job")
+                    sys.exit(1)
+                continue
+            print(f"Poll error HTTP {e.code}: {e.read().decode()}")
+            sys.exit(1)
         print(f"  status: {result.get('status')}")
         if result.get("status") in ("FAILED", "CANCELLED", "TIMED_OUT"):
             print(json.dumps(result, indent=2))
@@ -144,6 +157,7 @@ def main():
                             "start": 0, "end": 20}),
             ("complete",   {"prompt": "cinematic outro", "src_url": fixture}),
         ]
+        results_summary = []
         for task, preset in task_presets:
             print(f"\n=== {task} ===")
             args.task = task
@@ -156,11 +170,27 @@ def main():
             payload = build_payload(args)
             print(f"  payload: {json.dumps(payload['input'])[:120]}...")
             t0 = time.time()
-            result = call_endpoint(args.endpoint_id, args.api_key, payload, args.timeout)
-            dt = time.time() - t0
-            print(f"  elapsed: {dt:.1f}s")
-            save_output(result, task, args.format, args.out)
-        return
+            try:
+                result = call_endpoint(args.endpoint_id, args.api_key, payload, args.timeout)
+                dt = time.time() - t0
+                print(f"  elapsed: {dt:.1f}s")
+                save_output(result, task, args.format, args.out)
+                results_summary.append((task, "ok", dt))
+            except SystemExit:
+                dt = time.time() - t0
+                results_summary.append((task, "fail", dt))
+                print(f"  [{task} failed after {dt:.1f}s — continuing with next task]")
+            except Exception as e:
+                dt = time.time() - t0
+                print(f"  [{task} errored: {type(e).__name__}: {e}]")
+                results_summary.append((task, "fail", dt))
+
+        print("\n=== Summary ===")
+        for task, status, dt in results_summary:
+            mark = "✓" if status == "ok" else "✗"
+            print(f"  {mark} {task}  {dt:.1f}s  {status}")
+        failed = [t for t, s, _ in results_summary if s != "ok"]
+        sys.exit(1 if failed else 0)
 
     payload = build_payload(args)
     print(f"Payload: {json.dumps(payload['input'])[:200]}")
