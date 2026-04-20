@@ -452,3 +452,137 @@ class TestHandlerText2Music:
         result = handler_fn({"input": {"prompt": "x"}})
         assert "error" in result
         assert "CUDA OOM" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# TestHandlerAudioInputTasks
+# ---------------------------------------------------------------------------
+class TestHandlerAudioInputTasks:
+    def _input_with_src(self, extra: dict) -> dict:
+        b64 = base64.b64encode(_short_mp3_bytes()).decode()
+        return {"src_audio_base64": b64, **extra}
+
+    def test_cover_passes_src_audio_path(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        captured = _setup_successful_mock(gen_mock, b"a")
+        result = handler_fn({"input": self._input_with_src({
+            "task_type": "cover",
+            "prompt": "jazz cover",
+        })})
+        assert "error" not in result
+        assert result["task_type"] == "cover"
+        params = captured["params"]
+        assert params.task_type == "cover"
+        assert params.src_audio_path is not None
+        # LM auto-skipped -> thinking forced False
+        assert params.thinking is False
+
+    def test_repaint_passes_start_end(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        captured = _setup_successful_mock(gen_mock, b"a")
+        result = handler_fn({"input": self._input_with_src({
+            "task_type": "repaint",
+            "prompt": "fix the bridge",
+            "repainting_start": 10.0,
+            "repainting_end": 20.0,
+        })})
+        assert "error" not in result
+        params = captured["params"]
+        assert params.task_type == "repaint"
+        assert params.repainting_start == 10.0
+        assert params.repainting_end == 20.0
+        assert params.thinking is False
+
+    def test_extract_passes_instruction(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        captured = _setup_successful_mock(gen_mock, b"a")
+        result = handler_fn({"input": self._input_with_src({
+            "task_type": "extract",
+            "instruction": "isolate drums",
+        })})
+        assert "error" not in result
+        params = captured["params"]
+        assert params.task_type == "extract"
+        assert params.instruction == "isolate drums"
+        assert params.thinking is False
+
+    def test_lego_keeps_thinking_true_by_default(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        captured = _setup_successful_mock(gen_mock, b"a")
+        result = handler_fn({"input": self._input_with_src({
+            "task_type": "lego",
+            "prompt": "remix",
+            "repainting_start": 0,
+            "repainting_end": 30,
+        })})
+        assert "error" not in result
+        params = captured["params"]
+        assert params.task_type == "lego"
+        assert params.repainting_start == 0
+        assert params.repainting_end == 30
+        # lego uses LM, thinking stays user-default (True)
+        assert params.thinking is True
+
+    def test_complete_keeps_thinking_true_by_default(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        captured = _setup_successful_mock(gen_mock, b"a")
+        result = handler_fn({"input": self._input_with_src({
+            "task_type": "complete",
+            "prompt": "finish the outro",
+        })})
+        assert "error" not in result
+        params = captured["params"]
+        assert params.task_type == "complete"
+        assert params.thinking is True
+
+    def test_src_audio_tempfile_cleaned_up(self, tmp_path):
+        """After handler() returns, the resolved tempfile should be gone."""
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        captured = _setup_successful_mock(gen_mock, b"a")
+        handler_fn({"input": self._input_with_src({
+            "task_type": "cover",
+            "prompt": "p",
+        })})
+        src_path = captured["params"].src_audio_path
+        assert not os.path.exists(src_path)
+
+    def test_all_task_types_return_consistent_output_shape(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        _setup_successful_mock(gen_mock, b"a")
+
+        inputs = {
+            "text2music": {"prompt": "x"},
+            "cover": self._input_with_src({
+                "task_type": "cover", "prompt": "p",
+            }),
+            "repaint": self._input_with_src({
+                "task_type": "repaint", "prompt": "p",
+                "repainting_start": 0, "repainting_end": 10,
+            }),
+            "extract": self._input_with_src({
+                "task_type": "extract", "instruction": "drums",
+            }),
+            "lego": self._input_with_src({
+                "task_type": "lego", "prompt": "p",
+                "repainting_start": 0, "repainting_end": 10,
+            }),
+            "complete": self._input_with_src({
+                "task_type": "complete", "prompt": "p",
+            }),
+        }
+
+        expected = {"audio_base64", "format", "duration",
+                    "seed", "sample_rate", "task_type"}
+        for task, inp in inputs.items():
+            _setup_successful_mock(gen_mock, b"a")
+            result = handler_fn({"input": inp})
+            assert "error" not in result, f"{task}: {result}"
+            assert set(result.keys()) == expected, f"{task} key mismatch"
+            assert result["task_type"] == task, f"{task} echo mismatch"
