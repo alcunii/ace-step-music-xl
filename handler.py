@@ -342,8 +342,157 @@ def _download_src_audio_url(url: str) -> str:
 
 
 def handler(job: dict) -> dict:
-    """Stub — will be filled in Task 8."""
-    return {"error": "handler not implemented yet"}
+    """Process a single music-generation request across all 6 task types.
+
+    See docs/superpowers/specs/2026-04-20-ace-step-xl-serverless-design.md
+    for the full input schema.
+    """
+    if dit_handler is None or llm_handler is None:
+        return {"error": "Models not loaded — worker startup failed"}
+
+    job_input = job.get("input", {}) or {}
+
+    err = _validate(job_input)
+    if err:
+        return err
+
+    task_type = job_input.get("task_type", "text2music")
+
+    # Resolve src_audio for audio-input tasks (all except text2music).
+    src_audio_path: Optional[str] = None
+    try:
+        src_audio_path = _resolve_src_audio(job_input)
+    except ValueError as e:
+        return {"error": f"src_audio error: {e}"}
+
+    try:
+        params, config, audio_format = _build_params(
+            task_type, job_input, src_audio_path
+        )
+
+        with tempfile.TemporaryDirectory() as save_dir:
+            result = generate_music(
+                dit_handler, llm_handler, params, config, save_dir=save_dir,
+            )
+            if not result.success:
+                return {"error": result.error or "Generation failed"}
+            if not result.audios:
+                return {"error": "No audio generated"}
+
+            audio = result.audios[0]
+            with open(audio["path"], "rb") as f:
+                audio_bytes = f.read()
+
+            return {
+                "audio_base64": base64.b64encode(audio_bytes).decode("utf-8"),
+                "format": audio_format,
+                "duration": audio.get("duration", params.duration),
+                "seed": audio["params"].get("seed", params.seed),
+                "sample_rate": audio.get("sample_rate", 48000),
+                "task_type": task_type,
+            }
+    except Exception as e:
+        logger.error("Unhandled generation error", exc_info=True)
+        return {"error": f"Internal error: {type(e).__name__}: {e}"}
+    finally:
+        if src_audio_path and os.path.exists(src_audio_path):
+            try:
+                os.unlink(src_audio_path)
+            except OSError:
+                logger.warning(f"Failed to unlink {src_audio_path}")
+
+
+def _build_params(
+    task_type: str,
+    job_input: dict,
+    src_audio_path: Optional[str],
+) -> tuple:
+    """Build GenerationParams + GenerationConfig for the given task_type.
+
+    Returns (params, config, audio_format).
+    """
+    audio_format = job_input.get("audio_format", "mp3")
+    seed = int(job_input.get("seed", -1))
+    batch_size = int(job_input.get("batch_size", 1))
+    batch_size = max(1, min(MAX_BATCH_SIZE, batch_size))
+    inference_steps = int(
+        job_input.get("inference_steps", INFERENCE_STEPS_DEFAULT)
+    )
+    inference_steps = max(1, min(200, inference_steps))
+    guidance_scale = float(
+        job_input.get("guidance_scale", GUIDANCE_SCALE_DEFAULT)
+    )
+    shift = float(job_input.get("shift", 1.0))
+
+    # Common defaults
+    duration = float(job_input.get("duration", 30))
+    duration = max(10.0, min(600.0, duration))
+    instrumental = bool(job_input.get("instrumental", True))
+    lyrics_in = job_input.get("lyrics", "")
+    lyrics = "[Instrumental]" if instrumental else lyrics_in
+
+    bpm = job_input.get("bpm")
+    if bpm is not None:
+        bpm = max(30, min(300, int(bpm)))
+    key_scale = job_input.get("key_scale", "")
+    time_signature = job_input.get("time_signature", "")
+    lm_temperature = float(job_input.get("lm_temperature", 0.85))
+    thinking = bool(job_input.get("thinking", True))
+
+    # Tasks where the LM is auto-skipped upstream; force thinking=False
+    # so we don't waste cycles preparing CoT inputs.
+    if task_type in ("cover", "repaint", "extract"):
+        thinking = False
+
+    # Task-specific extras
+    caption = job_input.get("prompt", "")
+    audio_cover_strength = float(
+        job_input.get("audio_cover_strength", 0.3)
+    )
+    instruction = job_input.get("instruction", "")
+    repainting_start = float(job_input.get("repainting_start", 0.0))
+    repainting_end = float(job_input.get("repainting_end", -1))
+
+    params_kwargs = dict(
+        task_type=task_type,
+        caption=caption,
+        lyrics=lyrics,
+        instrumental=instrumental,
+        duration=duration,
+        bpm=bpm,
+        keyscale=key_scale,
+        timesignature=time_signature,
+        inference_steps=inference_steps,
+        guidance_scale=guidance_scale,
+        shift=shift,
+        seed=seed,
+        thinking=thinking,
+        lm_temperature=lm_temperature,
+        use_cot_metas=thinking,
+        use_cot_caption=thinking,
+        use_cot_language=False,
+    )
+
+    if task_type != "text2music":
+        params_kwargs["src_audio_path"] = src_audio_path
+        params_kwargs["audio_cover_strength"] = audio_cover_strength
+
+    if task_type in ("repaint", "lego"):
+        params_kwargs["repainting_start"] = repainting_start
+        params_kwargs["repainting_end"] = repainting_end
+
+    if task_type == "extract":
+        params_kwargs["instruction"] = instruction
+
+    params = GenerationParams(**params_kwargs)
+
+    config = GenerationConfig(
+        batch_size=batch_size,
+        use_random_seed=(seed == -1),
+        seeds=None if seed == -1 else [seed],
+        audio_format=audio_format,
+    )
+    return params, config, audio_format
 
 
 # Load models + start worker (skipped during test import because mocks replace

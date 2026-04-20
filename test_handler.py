@@ -372,3 +372,83 @@ class TestSchemaValidation:
         })
         assert err is not None
         assert "audio_format" in err["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# TestHandlerText2Music
+# ---------------------------------------------------------------------------
+class TestHandlerText2Music:
+    def test_happy_path_returns_expected_keys(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        _setup_successful_mock(gen_mock, b"fake-audio")
+
+        result = handler_fn({"input": {"prompt": "epic orchestral"}})
+
+        expected = {
+            "audio_base64", "format", "duration",
+            "seed", "sample_rate", "task_type",
+        }
+        assert expected == set(result.keys())
+        assert result["task_type"] == "text2music"
+        assert result["format"] == "mp3"
+
+    def test_audio_base64_roundtrip(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        payload = b"\x00\x01\x02\xff" * 256
+        _setup_successful_mock(gen_mock, payload)
+
+        result = handler_fn({"input": {"prompt": "lo-fi"}})
+        assert base64.b64decode(result["audio_base64"]) == payload
+
+    def test_missing_prompt_errors(self):
+        handler_fn = _import_handler_func()
+        result = handler_fn({"input": {}})
+        assert "error" in result
+
+    def test_defaults_to_instrumental(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        captured = _setup_successful_mock(gen_mock, b"a")
+        handler_fn({"input": {"prompt": "ambient"}})
+        params = captured["params"]
+        assert params.instrumental is True
+        assert params.lyrics == "[Instrumental]"
+
+    def test_vocal_mode_accepts_lyrics(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        captured = _setup_successful_mock(gen_mock, b"a")
+        handler_fn({"input": {
+            "prompt": "pop",
+            "instrumental": False,
+            "lyrics": "la la la",
+        }})
+        assert captured["params"].instrumental is False
+        assert captured["params"].lyrics == "la la la"
+
+    def test_xl_defaults_inference_steps_50_cfg_7(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        captured = _setup_successful_mock(gen_mock, b"a")
+        handler_fn({"input": {"prompt": "x"}})
+        assert captured["params"].inference_steps == 50
+        assert captured["params"].guidance_scale == 7.0
+
+    def test_batch_size_clamped(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        captured = _setup_successful_mock(gen_mock, b"a")
+        handler_fn({"input": {"prompt": "x", "batch_size": 999}})
+        mod = _import_handler_module()
+        assert captured["config"].batch_size == mod.MAX_BATCH_SIZE
+
+    def test_failed_result_returns_error(self):
+        handler_fn = _import_handler_func()
+        gen_mock = sys.modules["acestep.inference"].generate_music
+        gen_mock.side_effect = None
+        gen_mock.return_value = FakeGenerationResult(success=False, error="CUDA OOM")
+        result = handler_fn({"input": {"prompt": "x"}})
+        assert "error" in result
+        assert "CUDA OOM" in result["error"]
