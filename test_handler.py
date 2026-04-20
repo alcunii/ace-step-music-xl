@@ -160,3 +160,36 @@ def _setup_successful_mock(
 
 def _short_mp3_bytes() -> bytes:
     return (FIXTURES / "short.mp3").read_bytes()
+
+
+# ---------------------------------------------------------------------------
+# TestModuleConstants
+# ---------------------------------------------------------------------------
+class TestModuleConstants:
+    """Verify env vars are read into module constants correctly."""
+
+    def test_checkpoint_dir_from_env(self, monkeypatch, tmp_path):
+        custom = tmp_path / "custom_ckpt"
+        custom.mkdir()
+        monkeypatch.setenv("ACESTEP_CHECKPOINT_DIR", str(custom))
+        sys.modules.pop("handler", None)
+        mod = _import_handler_module()
+        assert mod.CHECKPOINT_DIR == str(custom)
+
+    def test_config_path_defaults_to_xl(self, monkeypatch):
+        monkeypatch.delenv("ACESTEP_CONFIG_PATH", raising=False)
+        sys.modules.pop("handler", None)
+        mod = _import_handler_module()
+        assert mod.DIT_CONFIG == "acestep-v15-xl-base"
+
+    def test_inference_steps_default_50(self, monkeypatch):
+        monkeypatch.delenv("ACESTEP_INFERENCE_STEPS_DEFAULT", raising=False)
+        sys.modules.pop("handler", None)
+        mod = _import_handler_module()
+        assert mod.INFERENCE_STEPS_DEFAULT == 50
+
+    def test_guidance_scale_default_7(self, monkeypatch):
+        monkeypatch.delenv("ACESTEP_GUIDANCE_SCALE_DEFAULT", raising=False)
+        sys.modules.pop("handler", None)
+        mod = _import_handler_module()
+        assert mod.GUIDANCE_SCALE_DEFAULT == 7.0
