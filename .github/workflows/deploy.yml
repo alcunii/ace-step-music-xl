@@ -81,33 +81,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Update RunPod template
+      - name: Announce rollout
         env:
-          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
-          RUNPOD_TEMPLATE_ID: ${{ secrets.RUNPOD_TEMPLATE_ID_XL }}
           IMAGE_TAG: dmrabh/ace-step-music-xl:${{ needs.build-push.outputs.sha_tag }}
         run: |
-          PAYLOAD=$(python3 -c "
-          import json, os
-          query = 'mutation SaveTemplate(\$id: String!, \$imageName: String!) { saveTemplate(input: { id: \$id, imageName: \$imageName }) { id imageName } }'
-          variables = {
-              'id': os.environ['RUNPOD_TEMPLATE_ID'],
-              'imageName': os.environ['IMAGE_TAG']
-          }
-          print(json.dumps({'query': query, 'variables': variables}))
-          ")
-
-          RESPONSE=$(curl -s --max-time 30 --connect-timeout 10 -X POST https://api.runpod.io/graphql \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
-            -d "${PAYLOAD}")
-
-          echo "RunPod template update completed"
-
-          if echo "${RESPONSE}" | grep -q '"errors"'; then
-            echo "ERROR: RunPod template update failed"
-            echo "${RESPONSE}"
-            exit 1
-          fi
-
-          echo "Template updated successfully"
+          # Template stays pinned at :latest; new workers pull the new image on
+          # next cold-start automatically. Previous saveTemplate-by-id mutation
+          # broke when RunPod made name/env/containerDiskInGb/volumeInGb/dockerArgs
+          # required on SaveTemplateInput. For pin-to-sha rollouts, update the
+          # template imageName in the RunPod UI manually.
+          echo "Image pushed: ${IMAGE_TAG}"
+          echo "Template ${{ secrets.RUNPOD_TEMPLATE_ID_XL }} points at :latest — next worker cold-start picks up the new image."

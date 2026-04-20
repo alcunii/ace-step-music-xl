@@ -54,9 +54,11 @@ class TestWorkflowStructure:
         meta = [s for s in steps if s.get("id") == "meta"][0]
         assert meta["with"]["images"] == "dmrabh/ace-step-music-xl"
 
-    def test_deploy_uses_xl_template_secret(self, workflow):
+    def test_deploy_references_xl_image(self, workflow):
+        """Deploy job announces which image was pushed. Template update via
+        RunPod UI — GraphQL saveTemplate mutation no longer usable with the
+        minimal payload (now requires name/env/containerDiskInGb/etc.)."""
         deploy_steps = workflow["jobs"]["deploy"]["steps"]
         deploy_step = deploy_steps[0]
-        assert "RUNPOD_API_KEY" in deploy_step["env"]
-        # The raw YAML will have the placeholder string intact
-        assert "RUNPOD_TEMPLATE_ID_XL" in deploy_step["env"]["RUNPOD_TEMPLATE_ID"]
+        assert "IMAGE_TAG" in deploy_step["env"]
+        assert "dmrabh/ace-step-music-xl" in deploy_step["env"]["IMAGE_TAG"]
