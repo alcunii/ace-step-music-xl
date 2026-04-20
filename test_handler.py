@@ -462,7 +462,7 @@ class TestHandlerAudioInputTasks:
         b64 = base64.b64encode(_short_mp3_bytes()).decode()
         return {"src_audio_base64": b64, **extra}
 
-    def test_cover_passes_src_audio_path(self):
+    def test_cover_passes_src_audio(self):
         handler_fn = _import_handler_func()
         gen_mock = sys.modules["acestep.inference"].generate_music
         captured = _setup_successful_mock(gen_mock, b"a")
@@ -474,7 +474,7 @@ class TestHandlerAudioInputTasks:
         assert result["task_type"] == "cover"
         params = captured["params"]
         assert params.task_type == "cover"
-        assert params.src_audio_path is not None
+        assert params.src_audio is not None
         # LM auto-skipped -> thinking forced False
         assert params.thinking is False
 
@@ -549,7 +549,7 @@ class TestHandlerAudioInputTasks:
             "task_type": "cover",
             "prompt": "p",
         })})
-        src_path = captured["params"].src_audio_path
+        src_path = captured["params"].src_audio
         assert not os.path.exists(src_path)
 
     def test_all_task_types_return_consistent_output_shape(self):

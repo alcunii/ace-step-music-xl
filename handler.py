@@ -479,7 +479,7 @@ def _build_params(
     )
 
     if task_type != "text2music":
-        params_kwargs["src_audio_path"] = src_audio_path
+        params_kwargs["src_audio"] = src_audio_path
         params_kwargs["audio_cover_strength"] = audio_cover_strength
 
     if task_type in ("repaint", "lego"):
