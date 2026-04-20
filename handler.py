@@ -241,8 +241,52 @@ def _resolve_src_audio(job_input: dict) -> Optional[str]:
 
 
 def _download_src_audio_url(url: str) -> str:
-    """Stub — URL implementation added in Task 6."""
-    raise NotImplementedError("URL path implemented in Task 6")
+    """Download audio from an HTTPS URL into a tempfile, with size + scheme caps."""
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError(
+            f"src_audio_url must be https:// (got {parsed.scheme!r})"
+        )
+
+    try:
+        resp = requests.get(url, stream=True, timeout=SRC_AUDIO_DOWNLOAD_TIMEOUT)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        raise ValueError(f"failed to download src_audio_url: {e}") from e
+
+    # Size gate based on Content-Length if present
+    content_length = resp.headers.get("Content-Length")
+    if content_length and int(content_length) > MAX_SRC_AUDIO_BYTES:
+        raise ValueError(
+            f"src_audio_url size {content_length} exceeds 50 MB limit"
+        )
+
+    # Guess extension from URL or content-type; default .audio
+    suffix = os.path.splitext(parsed.path)[1] or ".audio"
+    fd, path = tempfile.mkstemp(suffix=suffix, prefix="src_audio_")
+    total = 0
+    try:
+        with os.fdopen(fd, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > MAX_SRC_AUDIO_BYTES:
+                    raise ValueError(
+                        f"src_audio_url exceeded 50 MB size limit during stream"
+                    )
+                f.write(chunk)
+    except Exception:
+        if os.path.exists(path):
+            os.unlink(path)
+        raise
+
+    try:
+        _validate_audio_file(path)
+    except Exception:
+        os.unlink(path)
+        raise
+    return path
 
 
 def handler(job: dict) -> dict:

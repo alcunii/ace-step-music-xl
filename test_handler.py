@@ -225,3 +225,73 @@ class TestResolveSrcAudioBase64:
         junk = base64.b64encode(b"not-audio-bytes-at-all").decode()
         with pytest.raises(ValueError, match="audio"):
             mod._resolve_src_audio({"src_audio_base64": junk})
+
+
+# ---------------------------------------------------------------------------
+# TestResolveSrcAudio — URL path
+# ---------------------------------------------------------------------------
+import responses
+from responses import matchers
+
+
+class TestResolveSrcAudioUrl:
+    URL = "https://example.com/track.mp3"
+
+    @responses.activate
+    def test_https_download_writes_tempfile(self):
+        mod = _import_handler_module()
+        audio_bytes = _short_mp3_bytes()
+        responses.add(
+            responses.GET, self.URL,
+            body=audio_bytes,
+            headers={"Content-Type": "audio/mpeg"},
+        )
+        path = mod._resolve_src_audio({"src_audio_url": self.URL})
+        assert path is not None
+        assert os.path.exists(path)
+        with open(path, "rb") as f:
+            assert f.read() == audio_bytes
+        os.unlink(path)
+
+    def test_http_url_rejected(self):
+        mod = _import_handler_module()
+        with pytest.raises(ValueError, match="https"):
+            mod._resolve_src_audio({"src_audio_url": "http://example.com/t.mp3"})
+
+    def test_file_url_rejected(self):
+        mod = _import_handler_module()
+        with pytest.raises(ValueError, match="https"):
+            mod._resolve_src_audio({"src_audio_url": "file:///etc/passwd"})
+
+    @responses.activate
+    def test_oversized_download_rejected(self):
+        """Download larger than MAX_SRC_AUDIO_BYTES should raise."""
+        mod = _import_handler_module()
+        # 51 MB payload
+        big = b"\x00" * (51 * 1024 * 1024)
+        responses.add(
+            responses.GET, self.URL,
+            body=big,
+            headers={"Content-Type": "audio/mpeg"},
+        )
+        with pytest.raises(ValueError, match="50 MB|size"):
+            mod._resolve_src_audio({"src_audio_url": self.URL})
+
+    @responses.activate
+    def test_url_wins_when_both_provided(self):
+        mod = _import_handler_module()
+        url_bytes = _short_mp3_bytes()
+        responses.add(
+            responses.GET, self.URL,
+            body=url_bytes,
+            headers={"Content-Type": "audio/mpeg"},
+        )
+        # base64 contains different bytes — we should get the URL ones
+        different = base64.b64encode(b"DIFFERENT").decode()
+        path = mod._resolve_src_audio({
+            "src_audio_url": self.URL,
+            "src_audio_base64": different,
+        })
+        with open(path, "rb") as f:
+            assert f.read() == url_bytes
+        os.unlink(path)
