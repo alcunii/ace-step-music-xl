@@ -449,7 +449,11 @@ def _build_params(
     guidance_scale = float(
         job_input.get("guidance_scale", GUIDANCE_SCALE_DEFAULT)
     )
-    shift = float(job_input.get("shift", 1.0))
+    shift = float(job_input.get("shift", 3.0))
+    use_adg = bool(job_input.get("use_adg", False))
+    cfg_interval_start = float(job_input.get("cfg_interval_start", 0.0))
+    cfg_interval_end = float(job_input.get("cfg_interval_end", 1.0))
+    infer_method = job_input.get("infer_method", "ode")
 
     # Common defaults
     duration = float(job_input.get("duration", 30))
@@ -498,6 +502,10 @@ def _build_params(
         use_cot_metas=thinking,
         use_cot_caption=thinking,
         use_cot_language=False,
+        use_adg=use_adg,
+        cfg_interval_start=cfg_interval_start,
+        cfg_interval_end=cfg_interval_end,
+        infer_method=infer_method,
     )
 
     if task_type != "text2music":
