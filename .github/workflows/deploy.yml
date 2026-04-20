@@ -1,0 +1,113 @@
+name: Build and Deploy ACE-Step XL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements-test.txt
+
+      - name: Install system deps for soundfile
+        run: sudo apt-get update && sudo apt-get install -y libsndfile1 ffmpeg
+
+      - name: Install test dependencies
+        run: pip install -r requirements-test.txt
+
+      - name: Run tests
+        run: pytest test_handler.py test_workflow.py -v
+
+  build-push:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      sha_tag: ${{ steps.sha-tag.outputs.sha_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache
+          sudo docker image prune -af
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: dmrabh/ace-step-music-xl
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Extract SHA tag
+        id: sha-tag
+        run: echo "sha_tag=${{ steps.meta.outputs.version }}" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: build-push
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Update RunPod template
+        env:
+          RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+          RUNPOD_TEMPLATE_ID: ${{ secrets.RUNPOD_TEMPLATE_ID_XL }}
+          IMAGE_TAG: dmrabh/ace-step-music-xl:${{ needs.build-push.outputs.sha_tag }}
+        run: |
+          PAYLOAD=$(python3 -c "
+          import json, os
+          query = 'mutation SaveTemplate(\$id: String!, \$imageName: String!) { saveTemplate(input: { id: \$id, imageName: \$imageName }) { id imageName } }'
+          variables = {
+              'id': os.environ['RUNPOD_TEMPLATE_ID'],
+              'imageName': os.environ['IMAGE_TAG']
+          }
+          print(json.dumps({'query': query, 'variables': variables}))
+          ")
+
+          RESPONSE=$(curl -s --max-time 30 --connect-timeout 10 -X POST https://api.runpod.io/graphql \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${RUNPOD_API_KEY}" \
+            -d "${PAYLOAD}")
+
+          echo "RunPod template update completed"
+
+          if echo "${RESPONSE}" | grep -q '"errors"'; then
+            echo "ERROR: RunPod template update failed"
+            echo "${RESPONSE}"
+            exit 1
+          fi
+
+          echo "Template updated successfully"
