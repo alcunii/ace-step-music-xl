@@ -176,6 +176,75 @@ def load_models():
         raise RuntimeError(f"LM init failed: {msg}")
 
 
+# ---------------------------------------------------------------------------
+# Source audio resolver
+# ---------------------------------------------------------------------------
+def _write_tempfile(data: bytes, suffix: str = ".audio") -> str:
+    fd, path = tempfile.mkstemp(suffix=suffix, prefix="src_audio_")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+    except Exception:
+        os.unlink(path)
+        raise
+    return path
+
+
+def _validate_audio_file(path: str) -> None:
+    """Raise ValueError if path isn't decodable audio or too long."""
+    try:
+        import soundfile as sf
+    except ImportError as e:
+        raise ValueError("soundfile not installed; cannot validate audio") from e
+    try:
+        info = sf.info(path)
+    except Exception as e:
+        raise ValueError(f"invalid audio file: {e}") from e
+    if info.duration > MAX_SRC_AUDIO_DURATION:
+        raise ValueError(
+            f"src_audio duration {info.duration:.1f}s exceeds "
+            f"max {MAX_SRC_AUDIO_DURATION}s"
+        )
+
+
+def _resolve_src_audio(job_input: dict) -> Optional[str]:
+    """Return a filesystem path to the source audio, or None if unprovided.
+
+    URL takes precedence over base64 if both are given (caller is warned).
+    Caller is responsible for os.unlink(path) when done.
+
+    Raises ValueError on invalid input.
+    """
+    url = job_input.get("src_audio_url")
+    b64 = job_input.get("src_audio_base64")
+
+    if url and b64:
+        logger.warning(
+            "Both src_audio_url and src_audio_base64 provided; using URL"
+        )
+
+    if url:
+        return _download_src_audio_url(url)
+    if b64:
+        try:
+            data = base64.b64decode(b64, validate=True)
+        except Exception as e:
+            raise ValueError(f"src_audio_base64 is not valid base64: {e}") from e
+        path = _write_tempfile(data)
+        try:
+            _validate_audio_file(path)
+        except Exception:
+            os.unlink(path)
+            raise
+        return path
+    return None
+
+
+def _download_src_audio_url(url: str) -> str:
+    """Stub — URL implementation added in Task 6."""
+    raise NotImplementedError("URL path implemented in Task 6")
+
+
 def handler(job: dict) -> dict:
     """Stub — will be filled in Task 8."""
     return {"error": "handler not implemented yet"}

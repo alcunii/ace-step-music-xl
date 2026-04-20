@@ -193,3 +193,35 @@ class TestModuleConstants:
         sys.modules.pop("handler", None)
         mod = _import_handler_module()
         assert mod.GUIDANCE_SCALE_DEFAULT == 7.0
+
+
+# ---------------------------------------------------------------------------
+# TestResolveSrcAudio — base64 path
+# ---------------------------------------------------------------------------
+class TestResolveSrcAudioBase64:
+    def test_base64_decodes_to_tempfile(self):
+        mod = _import_handler_module()
+        audio_bytes = _short_mp3_bytes()
+        b64 = base64.b64encode(audio_bytes).decode()
+        path = mod._resolve_src_audio({"src_audio_base64": b64})
+        assert path is not None
+        assert os.path.exists(path)
+        with open(path, "rb") as f:
+            assert f.read() == audio_bytes
+        os.unlink(path)
+
+    def test_none_when_no_audio_provided(self):
+        mod = _import_handler_module()
+        path = mod._resolve_src_audio({"prompt": "just text"})
+        assert path is None
+
+    def test_invalid_base64_raises_value_error(self):
+        mod = _import_handler_module()
+        with pytest.raises(ValueError, match="base64"):
+            mod._resolve_src_audio({"src_audio_base64": "!!!not-b64!!!"})
+
+    def test_base64_invalid_audio_raises(self):
+        mod = _import_handler_module()
+        junk = base64.b64encode(b"not-audio-bytes-at-all").decode()
+        with pytest.raises(ValueError, match="audio"):
+            mod._resolve_src_audio({"src_audio_base64": junk})
