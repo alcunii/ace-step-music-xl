@@ -1,8 +1,9 @@
 # ACE-Step 1.5 XL RunPod Serverless Endpoint
-# GPU: NVIDIA A40 (48GB GDDR6, Ampere sm_86)
-# - bfloat16 inference (native Ampere support)
+# GPU: NVIDIA RTX 4090 (24GB GDDR6X, Ada sm_89)
+# - bfloat16 inference (Ada supports it natively)
 # - SDPA attention (flash-attn skipped due to torch 2.4.0 ABI mismatch)
-# - XL DiT (~9 GB bf16) + 1.7B LM fit well under 48GB; no offload needed
+# - XL DiT (~9 GB bf16) + 1.7B LM is tight on 24GB; DiT offload to CPU
+#   between steps keeps headroom for KV cache + generation buffers
 # - Weights live on RunPod network volume at /runpod-volume (not baked)
 FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 
@@ -68,11 +69,11 @@ ENV ACESTEP_LM_BACKEND=vllm
 ENV PYTHONUNBUFFERED=1
 
 ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-ENV TORCH_CUDA_ARCH_LIST="8.6"
+ENV TORCH_CUDA_ARCH_LIST="8.9"
 ENV ACESTEP_COMPILE_MODEL=1
-ENV ACESTEP_MAX_BATCH_SIZE=4
+ENV ACESTEP_MAX_BATCH_SIZE=2
 ENV ACESTEP_INFERENCE_STEPS_DEFAULT=50
 ENV ACESTEP_GUIDANCE_SCALE_DEFAULT=7.0
-ENV ACESTEP_OFFLOAD_DIT_TO_CPU=0
+ENV ACESTEP_OFFLOAD_DIT_TO_CPU=1
 
 CMD ["python", "-u", "/app/handler.py"]

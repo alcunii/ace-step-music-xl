@@ -5,8 +5,8 @@ Unified handler supporting six task types: `text2music`, `cover`, `repaint`, `ex
 
 ## Deployment
 
-- **GPU:** A40 48GB, RunPod data center **EU-SE-1**
-- **Weights:** 35 GB RunPod network volume mounted at `/runpod-volume`
+- **GPU:** RTX 4090 24GB, RunPod data center **US-IL-1**
+- **Weights:** 35 GB RunPod network volume (`52nyie2f6k`) mounted at `/runpod-volume`
 - **Image:** `dmrabh/ace-step-music-xl:latest`
 - **Pipeline:** push to `main` → GitHub Actions → Docker Hub → RunPod `saveTemplate` mutation
 
@@ -35,7 +35,7 @@ python test_endpoint.py --all                 # smoke test all 6 tasks
 | `duration` | float | `30` | Clamped 10–600 |
 | `inference_steps` | int | `50` | XL recommended |
 | `guidance_scale` | float | `7.0` | XL uses CFG |
-| `batch_size` | int | `1` | Clamped to `MAX_BATCH_SIZE` (default 4) |
+| `batch_size` | int | `1` | Clamped to `MAX_BATCH_SIZE` (default 2) |
 | `seed` | int | `-1` | `-1` = random |
 | `audio_format` | string | `mp3` | `mp3` / `wav` / `flac` |
 | `instrumental` | bool | `true` | When `true`, forces `lyrics="[Instrumental]"` |
