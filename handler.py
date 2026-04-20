@@ -100,6 +100,12 @@ def _apply_torch24_compat_patches():
 
     _torch.argsort = _torch_argsort_bool_safe
 
+    try:
+        import torch._dynamo
+        torch._dynamo.config.suppress_errors = True
+    except Exception:
+        logger.warning("Could not configure torch._dynamo.suppress_errors")
+
     _orig_sdpa = F.scaled_dot_product_attention
 
     def _sdpa_gqa_compat(*args, **kwargs):
