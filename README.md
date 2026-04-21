@@ -54,6 +54,20 @@ python test_endpoint.py --all                 # smoke test all 6 tasks
 }
 ```
 
+## Scripts
+
+Standalone client-side orchestrators for generation patterns beyond a single
+`/runsync` call.
+
+- `scripts/bruno_mars_style_midnight_gold.py` — 3-minute original funk-pop
+  song via `text2music`.
+- `scripts/cover_afterlife_armstrong.py` — reinterpret a local MP3 as a
+  different style via `task_type=cover`.
+- `scripts/ambient_eno_45min.py` — 7-segment × 420 s Eno-style ambient run
+  stitched locally with ffmpeg crossfade to a ~46-minute FLAC. Resumable,
+  pinnable via `--pin-seeds-from`, idempotent per segment. See
+  `docs/superpowers/specs/2026-04-21-ambient-eno-45min-design.md`.
+
 ## Environment variables
 
 See `.env.example`.
