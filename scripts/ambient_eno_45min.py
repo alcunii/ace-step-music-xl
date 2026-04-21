@@ -368,5 +368,60 @@ def preflight_checks(api_key: str, endpoint_id: str, out_dir: Path) -> None:
         raise RuntimeError(f"output directory not writable: {out_dir}")
 
 
+# ---------------------------------------------------------------------------
+# CLI parsing + run-dir helpers
+# ---------------------------------------------------------------------------
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Generate ~46 min of Eno-style ambient via ACE-Step XL.",
+    )
+    p.add_argument("--run-id", default=None,
+                   help="Reuse an existing run directory. Default: new YYYY-MM-DD-HHMM.")
+    p.add_argument("--force", action="store_true",
+                   help="Regenerate all segments, overwriting existing.")
+    p.add_argument("--segment", type=int, default=None,
+                   choices=list(range(1, SEGMENT_COUNT + 1)),
+                   help=f"Regenerate only segment N (1..{SEGMENT_COUNT}).")
+    p.add_argument("--stitch-only", action="store_true",
+                   help="Skip all API calls; just run ffmpeg on existing segments.")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Print the 7 payloads without submitting.")
+    p.add_argument("--pin-seeds-from", default=None, metavar="RUN-ID",
+                   help="Reuse exact seeds from a prior run's sidecars.")
+    p.add_argument("--duration", type=int, default=SEGMENT_DURATION_SEC,
+                   help=f"Per-segment duration in seconds (default {SEGMENT_DURATION_SEC}).")
+    return p.parse_args(argv)
+
+
+def resolve_run_dir(base: Path, run_id: Optional[str]) -> Path:
+    """Return the run directory path. If run_id is None, generate a
+    YYYY-MM-DD-HHMM id. Does NOT create the directory — caller does that."""
+    import datetime as _dt
+    if run_id is None:
+        run_id = _dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")[:16]
+    return Path(base) / run_id
+
+
+def segment_paths_for(run_dir: Path) -> list[Path]:
+    """Return the 7 FLAC segment paths inside run_dir (numbered 01..07)."""
+    return [Path(run_dir) / f"segment_{i:02d}.flac"
+            for i in range(1, SEGMENT_COUNT + 1)]
+
+
+def load_pinned_seeds(run_dir: Path) -> list[int]:
+    """Read seeds from sidecars in a prior run directory. Raises
+    FileNotFoundError if any of the 7 sidecars are missing."""
+    run_dir = Path(run_dir)
+    if not run_dir.is_dir():
+        raise FileNotFoundError(run_dir)
+    seeds: list[int] = []
+    for i in range(1, SEGMENT_COUNT + 1):
+        sc = run_dir / f"segment_{i:02d}.json"
+        if not sc.exists():
+            raise FileNotFoundError(sc)
+        seeds.append(int(read_sidecar(sc)["seed"]))
+    return seeds
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit("main() not yet implemented (Task 10)")

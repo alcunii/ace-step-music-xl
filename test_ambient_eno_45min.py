@@ -444,3 +444,76 @@ class TestPreflight:
         monkeypatch.setattr(m.shutil, "which", lambda x: None)
         with pytest.raises(RuntimeError, match="ffmpeg"):
             m.preflight_checks(api_key="k", endpoint_id="EP", out_dir=tmp_path)
+
+
+class TestCLI:
+    def test_defaults(self):
+        m = _load()
+        args = m.parse_args([])
+        assert args.run_id is None  # resolved to YYYY-MM-DD-HHMM later
+        assert args.force is False
+        assert args.segment is None
+        assert args.stitch_only is False
+        assert args.dry_run is False
+        assert args.pin_seeds_from is None
+        assert args.duration == m.SEGMENT_DURATION_SEC
+
+    def test_all_flags(self):
+        m = _load()
+        args = m.parse_args([
+            "--run-id", "run1", "--force", "--segment", "3",
+            "--stitch-only", "--dry-run",
+            "--pin-seeds-from", "run0", "--duration", "60",
+        ])
+        assert args.run_id == "run1"
+        assert args.force is True
+        assert args.segment == 3
+        assert args.stitch_only is True
+        assert args.dry_run is True
+        assert args.pin_seeds_from == "run0"
+        assert args.duration == 60
+
+    def test_segment_flag_rejects_out_of_range(self):
+        m = _load()
+        import pytest
+        with pytest.raises(SystemExit):
+            m.parse_args(["--segment", "8"])
+        with pytest.raises(SystemExit):
+            m.parse_args(["--segment", "0"])
+
+
+class TestRunDir:
+    def test_resolve_run_dir_new_format(self, tmp_path):
+        m = _load()
+        rd = m.resolve_run_dir(base=tmp_path, run_id=None)
+        assert rd.parent == tmp_path
+        # Format: YYYY-MM-DD-HHMM (16 chars)
+        assert len(rd.name) == 16
+        assert rd.name[4] == "-" and rd.name[7] == "-" and rd.name[10] == "-"
+
+    def test_resolve_run_dir_reuses_supplied_id(self, tmp_path):
+        m = _load()
+        rd = m.resolve_run_dir(base=tmp_path, run_id="my-run-42")
+        assert rd == tmp_path / "my-run-42"
+
+    def test_segment_paths_for_returns_seven(self, tmp_path):
+        m = _load()
+        paths = m.segment_paths_for(tmp_path)
+        assert len(paths) == 7
+        assert paths[0].name == "segment_01.flac"
+        assert paths[6].name == "segment_07.flac"
+
+    def test_load_pinned_seeds_from_prior_run(self, tmp_path):
+        m = _load()
+        prior = tmp_path / "old"
+        prior.mkdir()
+        for i, seed in enumerate([1, 2, 3, 4, 5, 6, 7], start=1):
+            m.write_sidecar(prior / f"segment_{i:02d}.json", {"seed": seed})
+        seeds = m.load_pinned_seeds(prior)
+        assert seeds == [1, 2, 3, 4, 5, 6, 7]
+
+    def test_load_pinned_seeds_missing_file_errors(self, tmp_path):
+        m = _load()
+        import pytest
+        with pytest.raises(FileNotFoundError):
+            m.load_pinned_seeds(tmp_path / "does-not-exist")
