@@ -402,7 +402,7 @@ class TestFFmpegCommand:
         def fake_run(cmd, check, capture_output):
             calls.append(cmd)
             # Create an empty output file so post-checks succeed.
-            Path(cmd[cmd.index("-map") + 2 if False else -1]).write_bytes(b"")
+            Path(cmd[-1]).write_bytes(b"")
             class R:
                 returncode = 0
                 stdout = b""
