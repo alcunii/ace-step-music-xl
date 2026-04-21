@@ -182,13 +182,13 @@ class TestManifest:
 
 
 class TestRunPodClient:
-    def test_submit_job_posts_to_runsync(self):
+    def test_submit_job_posts_to_run_endpoint(self):
         m = _load()
         import responses
         with responses.RequestsMock() as rsps:
             rsps.add(
                 responses.POST,
-                "https://api.runpod.ai/v2/EP/runsync",
+                "https://api.runpod.ai/v2/EP/run",
                 json={"id": "abc123", "status": "IN_QUEUE"},
                 status=200,
             )
@@ -204,7 +204,7 @@ class TestRunPodClient:
         with responses.RequestsMock() as rsps:
             rsps.add(
                 responses.POST,
-                "https://api.runpod.ai/v2/EP/runsync",
+                "https://api.runpod.ai/v2/EP/run",
                 json={"id": "j1", "status": "COMPLETED",
                       "output": {"audio_base64": "AAA"}},
                 status=200,
@@ -270,10 +270,16 @@ class TestRunPodClient:
 
 
 class TestRunSegment:
-    def _mock_runsync_completed(self, rsps, endpoint_id, audio_b64):
+    def _mock_run_completed(self, rsps, endpoint_id, audio_b64):
+        """Mock /run returning COMPLETED synchronously with output inline.
+
+        This is a fast-path scenario for cached/very-short jobs. Most real
+        /run responses return status=IN_QUEUE first and require a /status
+        poll — see TestMain for the full async-flow mock.
+        """
         rsps.add(
             responses.POST,
-            f"https://api.runpod.ai/v2/{endpoint_id}/runsync",
+            f"https://api.runpod.ai/v2/{endpoint_id}/run",
             json={"id": "j1", "status": "COMPLETED",
                   "output": {"audio_base64": audio_b64, "duration": 420.0,
                              "sample_rate": 48000, "seed": 777}},
@@ -285,7 +291,7 @@ class TestRunSegment:
         import pytest
         b64 = "ZmxhYw=="  # "flac"
         with responses.RequestsMock() as rsps:
-            self._mock_runsync_completed(rsps, "EP", b64)
+            self._mock_run_completed(rsps, "EP", b64)
             result = m.run_segment(
                 endpoint_id="EP", api_key="key", segment_num=2,
                 duration=420, seed=-1, poll_interval=0,
@@ -321,7 +327,7 @@ class TestRunSegment:
         with responses.RequestsMock() as rsps:
             for _ in range(m.MAX_SEGMENT_RETRIES):
                 rsps.add(responses.POST,
-                         "https://api.runpod.ai/v2/EP/runsync",
+                         "https://api.runpod.ai/v2/EP/run",
                          body=requests.exceptions.ConnectionError("boom"))
             with pytest.raises(RuntimeError, match="segment 4"):
                 m.run_segment(
@@ -524,16 +530,23 @@ class TestRunDir:
 
 
 class TestMain:
-    def _mock_runsync(self, rsps, endpoint_id, seed_base):
-        """Add 7 mocked /runsync calls returning distinct seeds.
+    def _mock_run_async(self, rsps, endpoint_id, seed_base):
+        """Mock the async /run + /status flow for each of 7 segments.
 
-        /runsync returns status=COMPLETED synchronously with output inline,
-        so run_segment never calls /status for these — only POSTs mocked.
+        /run returns IN_QUEUE (tiny body, matches production behaviour and
+        avoids the /runsync inline-response size cap). poll_job then GETs
+        /status/{id} which returns COMPLETED with the full output inline.
         """
         for i in range(1, 8):
             rsps.add(
                 responses.POST,
-                f"https://api.runpod.ai/v2/{endpoint_id}/runsync",
+                f"https://api.runpod.ai/v2/{endpoint_id}/run",
+                json={"id": f"job{i}", "status": "IN_QUEUE"},
+                status=200,
+            )
+            rsps.add(
+                responses.GET,
+                f"https://api.runpod.ai/v2/{endpoint_id}/status/job{i}",
                 json={
                     "id": f"job{i}", "status": "COMPLETED",
                     "output": {
@@ -598,7 +611,7 @@ class TestMain:
             return R()
         monkeypatch.setattr(m.subprocess, "run", fake_run)
         with responses.RequestsMock() as rsps:
-            self._mock_runsync(rsps, "EP", seed_base=1000)
+            self._mock_run_async(rsps, "EP", seed_base=1000)
             exit_code = m.main(
                 ["--run-id", "full1", "--duration", "10"],
             )
@@ -631,11 +644,16 @@ class TestMain:
             return R()
         monkeypatch.setattr(m.subprocess, "run", fake_run)
         with responses.RequestsMock() as rsps:
-            # Only 2 segments should be generated (sync COMPLETED returns
-            # output inline — no /status GET needed).
+            # Only 2 segments should be generated. Async flow: POST /run
+            # returns IN_QUEUE, then GET /status/{id} returns COMPLETED
+            # with output.
             for i in (6, 7):
                 rsps.add(responses.POST,
-                         "https://api.runpod.ai/v2/EP/runsync",
+                         "https://api.runpod.ai/v2/EP/run",
+                         json={"id": f"j{i}", "status": "IN_QUEUE"},
+                         status=200)
+                rsps.add(responses.GET,
+                         f"https://api.runpod.ai/v2/EP/status/j{i}",
                          json={"id": f"j{i}", "status": "COMPLETED",
                                "output": {
                                    "audio_base64": base64.b64encode(b"x").decode(),
@@ -644,7 +662,7 @@ class TestMain:
                                }},
                          status=200)
             exit_code = m.main(["--run-id", "res1"])
-            # Exactly 2 runsync POSTs — one per missing segment.
-            runsyncs = [c for c in rsps.calls if c.request.method == "POST"]
-            assert len(runsyncs) == 2
+            # Exactly 2 /run POSTs — one per missing segment.
+            runs = [c for c in rsps.calls if c.request.method == "POST"]
+            assert len(runs) == 2
         assert exit_code == 0

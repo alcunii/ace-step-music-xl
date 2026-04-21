@@ -152,13 +152,21 @@ def write_manifest(
 # Mirrors the pattern in scripts/bruno_mars_style_midnight_gold.py.
 # ---------------------------------------------------------------------------
 def submit_job(endpoint_id: str, api_key: str, payload: dict) -> dict:
-    """POST the payload to /v2/{ep}/runsync. Returns the full response body.
+    """POST the payload to /v2/{ep}/run (async). Returns the full response body
+    — typically {"id": "...", "status": "IN_QUEUE"}.
 
-    /runsync can return synchronously with status=COMPLETED and the full
-    output already included — the caller should check body["status"] before
-    deciding whether to poll.
+    We use the async /run endpoint, NOT /runsync, because our audio payload
+    regularly exceeds RunPod's synchronous inline-response size cap (~10–20
+    MB). A 360s FLAC is ~47 MB base64 — the /runsync worker successfully
+    generates the audio but RunPod's gateway 502s when the worker tries to
+    ship the result back. /run stores the result server-side and our caller
+    polls /status/{id} to retrieve it, which has no comparable size limit.
+
+    The returned body occasionally carries status=COMPLETED directly for very
+    short/cached jobs; callers should handle that case without requiring a
+    poll round-trip.
     """
-    url = f"https://api.runpod.ai/v2/{endpoint_id}/runsync"
+    url = f"https://api.runpod.ai/v2/{endpoint_id}/run"
     resp = requests.post(
         url,
         json=payload,
