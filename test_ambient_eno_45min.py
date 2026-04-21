@@ -1,5 +1,6 @@
 """Unit tests for scripts/ambient_eno_45min.py orchestrator."""
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -117,3 +118,56 @@ class TestPayloadBuilder:
         m = _load()
         p = m.build_payload(4, 420, -1)
         assert p["prompt"] == m.build_segment_prompt(4)
+
+
+class TestSidecar:
+    def test_sidecar_roundtrip(self, tmp_path):
+        m = _load()
+        path = tmp_path / "segment_03.json"
+        data = {
+            "segment_num": 3,
+            "phase": "Inhale-3",
+            "seed": 42,
+            "prompt": "test prompt",
+            "duration_requested": 420,
+            "duration_actual": 420.5,
+            "sample_rate": 48000,
+            "endpoint_id": "nwqnd0duxc6o38",
+            "run_id": "2026-04-21-1234",
+        }
+        m.write_sidecar(path, data)
+        got = m.read_sidecar(path)
+        assert got == data
+
+    def test_sidecar_is_human_readable(self, tmp_path):
+        m = _load()
+        path = tmp_path / "s.json"
+        m.write_sidecar(path, {"seed": 7, "phase": "Turn"})
+        text = path.read_text()
+        # pretty-printed (indented) for diff-friendliness
+        assert "\n" in text
+        assert '"seed": 7' in text
+
+
+class TestManifest:
+    def test_manifest_contains_required_fields(self, tmp_path):
+        m = _load()
+        manifest_path = tmp_path / "manifest.json"
+        m.write_manifest(
+            path=manifest_path,
+            run_id="2026-04-21-1234",
+            endpoint_id="nwqnd0duxc6o38",
+            seeds=[1, 2, 3, 4, 5, 6, 7],
+            segment_duration=420,
+            crossfade_sec=30,
+            locked_palette="x",
+        )
+        got = json.loads(manifest_path.read_text())
+        assert got["run_id"] == "2026-04-21-1234"
+        assert got["endpoint_id"] == "nwqnd0duxc6o38"
+        assert got["seeds"] == [1, 2, 3, 4, 5, 6, 7]
+        assert got["segment_count"] == 7
+        assert got["segment_duration_sec"] == 420
+        assert got["crossfade_sec"] == 30
+        assert got["locked_palette"] == "x"
+        assert "written_at" in got  # ISO8601 timestamp

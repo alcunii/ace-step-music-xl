@@ -106,5 +106,44 @@ def build_payload(segment_num: int, duration: int, seed: int) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Sidecar + manifest I/O (pure file-system helpers)
+# ---------------------------------------------------------------------------
+def write_sidecar(path: Path, data: dict) -> None:
+    """Write one segment's metadata as pretty-printed JSON."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True))
+
+
+def read_sidecar(path: Path) -> dict:
+    """Read a sidecar JSON file previously written by `write_sidecar`."""
+    return json.loads(Path(path).read_text())
+
+
+def write_manifest(
+    path: Path,
+    run_id: str,
+    endpoint_id: str,
+    seeds: list[int],
+    segment_duration: int,
+    crossfade_sec: int,
+    locked_palette: str,
+) -> None:
+    """Write the run-level manifest covering all 7 segments."""
+    import datetime as _dt
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "run_id": run_id,
+        "endpoint_id": endpoint_id,
+        "segment_count": SEGMENT_COUNT,
+        "segment_duration_sec": segment_duration,
+        "crossfade_sec": crossfade_sec,
+        "seeds": seeds,
+        "locked_palette": locked_palette,
+        "written_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit("main() not yet implemented (Task 10)")
