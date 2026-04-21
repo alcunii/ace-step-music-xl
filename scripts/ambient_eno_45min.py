@@ -145,5 +145,74 @@ def write_manifest(
     path.write_text(json.dumps(payload, indent=2, sort_keys=True))
 
 
+# ---------------------------------------------------------------------------
+# RunPod client — submit a job, poll to completion with 404 tolerance.
+# Mirrors the pattern in scripts/bruno_mars_style_midnight_gold.py.
+# ---------------------------------------------------------------------------
+def submit_job(endpoint_id: str, api_key: str, payload: dict) -> dict:
+    """POST the payload to /v2/{ep}/runsync. Returns the full response body.
+
+    /runsync can return synchronously with status=COMPLETED and the full
+    output already included — the caller should check body["status"] before
+    deciding whether to poll.
+    """
+    url = f"https://api.runpod.ai/v2/{endpoint_id}/runsync"
+    resp = requests.post(
+        url,
+        json=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        timeout=REQUEST_TIMEOUT_SEC,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def poll_job(
+    endpoint_id: str,
+    api_key: str,
+    job_id: str,
+    *,
+    poll_interval: int = POLL_INTERVAL_SEC,
+) -> dict:
+    """Poll /v2/{ep}/status/{job_id} until COMPLETED, FAILED, CANCELLED, or
+    TIMED_OUT. Tolerates up to MAX_TRANSIENT_404 consecutive 404s (the RunPod
+    status endpoint is briefly eventually-consistent after submission).
+
+    Returns the full status JSON on COMPLETED. Raises RuntimeError on terminal
+    failure or if transient 404 count is exceeded.
+    """
+    url = f"https://api.runpod.ai/v2/{endpoint_id}/status/{job_id}"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    consecutive_404s = 0
+    while True:
+        resp = requests.get(url, headers=headers, timeout=30)
+        if resp.status_code == 404:
+            consecutive_404s += 1
+            if consecutive_404s > MAX_TRANSIENT_404:
+                raise RuntimeError(
+                    f"Too many consecutive 404s polling job {job_id}"
+                )
+            if poll_interval > 0:
+                time.sleep(poll_interval)
+            continue
+        resp.raise_for_status()
+        consecutive_404s = 0
+        body = resp.json()
+        status = body.get("status", "")
+        if status == "COMPLETED":
+            return body
+        if status in ("FAILED", "CANCELLED", "TIMED_OUT"):
+            raise RuntimeError(
+                f"Job {job_id} terminal status {status}: "
+                f"{body.get('error', body)}"
+            )
+        # IN_QUEUE / IN_PROGRESS — keep polling
+        if poll_interval > 0:
+            time.sleep(poll_interval)
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit("main() not yet implemented (Task 10)")

@@ -171,3 +171,91 @@ class TestManifest:
         assert got["crossfade_sec"] == 30
         assert got["locked_palette"] == "x"
         assert "written_at" in got  # ISO8601 timestamp
+
+
+class TestRunPodClient:
+    def test_submit_job_posts_to_runsync(self):
+        m = _load()
+        import responses
+        with responses.RequestsMock() as rsps:
+            rsps.add(
+                responses.POST,
+                "https://api.runpod.ai/v2/EP/runsync",
+                json={"id": "abc123", "status": "IN_QUEUE"},
+                status=200,
+            )
+            body = m.submit_job("EP", "key", {"input": {}})
+            assert body["id"] == "abc123"
+            assert body["status"] == "IN_QUEUE"
+            assert len(rsps.calls) == 1
+            assert "Bearer key" in rsps.calls[0].request.headers["Authorization"]
+
+    def test_submit_job_returns_output_on_sync_complete(self):
+        m = _load()
+        import responses
+        with responses.RequestsMock() as rsps:
+            rsps.add(
+                responses.POST,
+                "https://api.runpod.ai/v2/EP/runsync",
+                json={"id": "j1", "status": "COMPLETED",
+                      "output": {"audio_base64": "AAA"}},
+                status=200,
+            )
+            body = m.submit_job("EP", "key", {"input": {}})
+            assert body["status"] == "COMPLETED"
+            assert body["output"]["audio_base64"] == "AAA"
+
+    def test_poll_job_returns_completed_output(self):
+        m = _load()
+        import responses
+        with responses.RequestsMock() as rsps:
+            rsps.add(
+                responses.GET,
+                "https://api.runpod.ai/v2/EP/status/job1",
+                json={"status": "COMPLETED", "output": {"audio_base64": "AAA"}},
+                status=200,
+            )
+            result = m.poll_job("EP", "key", "job1", poll_interval=0)
+            assert result["status"] == "COMPLETED"
+            assert result["output"]["audio_base64"] == "AAA"
+
+    def test_poll_job_tolerates_transient_404s(self):
+        m = _load()
+        import responses
+        with responses.RequestsMock() as rsps:
+            rsps.add(responses.GET,
+                     "https://api.runpod.ai/v2/EP/status/j", status=404)
+            rsps.add(responses.GET,
+                     "https://api.runpod.ai/v2/EP/status/j", status=404)
+            rsps.add(responses.GET,
+                     "https://api.runpod.ai/v2/EP/status/j",
+                     json={"status": "COMPLETED", "output": {"x": 1}},
+                     status=200)
+            result = m.poll_job("EP", "key", "j", poll_interval=0)
+            assert result["status"] == "COMPLETED"
+            assert len(rsps.calls) == 3
+
+    def test_poll_job_gives_up_after_too_many_404s(self):
+        m = _load()
+        import responses
+        import pytest
+        with responses.RequestsMock() as rsps:
+            # MAX_TRANSIENT_404 + 1 consecutive 404s
+            for _ in range(m.MAX_TRANSIENT_404 + 1):
+                rsps.add(responses.GET,
+                         "https://api.runpod.ai/v2/EP/status/j",
+                         status=404)
+            with pytest.raises(RuntimeError, match="404"):
+                m.poll_job("EP", "key", "j", poll_interval=0)
+
+    def test_poll_job_raises_on_terminal_failure(self):
+        m = _load()
+        import responses
+        import pytest
+        with responses.RequestsMock() as rsps:
+            rsps.add(responses.GET,
+                     "https://api.runpod.ai/v2/EP/status/j",
+                     json={"status": "FAILED", "error": "oom"},
+                     status=200)
+            with pytest.raises(RuntimeError, match="FAILED"):
+                m.poll_job("EP", "key", "j", poll_interval=0)
