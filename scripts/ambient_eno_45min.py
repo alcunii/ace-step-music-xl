@@ -214,5 +214,57 @@ def poll_job(
             time.sleep(poll_interval)
 
 
+# ---------------------------------------------------------------------------
+# Whole-segment retry wrapper
+# ---------------------------------------------------------------------------
+def run_segment(
+    *,
+    endpoint_id: str,
+    api_key: str,
+    segment_num: int,
+    duration: int,
+    seed: int,
+    poll_interval: int = POLL_INTERVAL_SEC,
+    retry_sleep: int = 5,
+) -> dict:
+    """Submit one segment and poll to completion, with up to
+    MAX_SEGMENT_RETRIES whole-segment retries on transient failure.
+
+    Returns the full RunPod status JSON on success. Raises RuntimeError after
+    all retries exhausted.
+    """
+    payload = {"input": build_payload(segment_num, duration, seed)}
+    last_err: Optional[BaseException] = None
+    for attempt in range(1, MAX_SEGMENT_RETRIES + 1):
+        try:
+            body = submit_job(endpoint_id, api_key, payload)
+            status = body.get("status", "")
+            if status == "COMPLETED":
+                # /runsync already finished synchronously — body has output.
+                return body
+            if status in ("FAILED", "CANCELLED", "TIMED_OUT"):
+                raise RuntimeError(
+                    f"segment {segment_num} submit returned status={status}: "
+                    f"{body.get('error', body)}"
+                )
+            job_id = body.get("id", "")
+            if not job_id:
+                raise RuntimeError(
+                    f"segment {segment_num} submit response missing id: {body}"
+                )
+            return poll_job(endpoint_id, api_key, job_id,
+                            poll_interval=poll_interval)
+        except (requests.RequestException, RuntimeError) as e:
+            last_err = e
+            if attempt < MAX_SEGMENT_RETRIES:
+                if retry_sleep > 0:
+                    time.sleep(retry_sleep)
+                continue
+    raise RuntimeError(
+        f"segment {segment_num} failed after {MAX_SEGMENT_RETRIES} attempts: "
+        f"{last_err}"
+    )
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit("main() not yet implemented (Task 10)")

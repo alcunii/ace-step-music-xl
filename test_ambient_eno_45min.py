@@ -4,6 +4,9 @@ import json
 import sys
 from pathlib import Path
 
+import requests
+import responses
+
 SCRIPT = Path(__file__).parent / "scripts" / "ambient_eno_45min.py"
 
 
@@ -259,3 +262,64 @@ class TestRunPodClient:
                      status=200)
             with pytest.raises(RuntimeError, match="FAILED"):
                 m.poll_job("EP", "key", "j", poll_interval=0)
+
+
+class TestRunSegment:
+    def _mock_runsync_completed(self, rsps, endpoint_id, audio_b64):
+        rsps.add(
+            responses.POST,
+            f"https://api.runpod.ai/v2/{endpoint_id}/runsync",
+            json={"id": "j1", "status": "COMPLETED",
+                  "output": {"audio_base64": audio_b64, "duration": 420.0,
+                             "sample_rate": 48000, "seed": 777}},
+            status=200,
+        )
+
+    def test_run_segment_success_first_try(self):
+        m = _load()
+        import pytest
+        b64 = "ZmxhYw=="  # "flac"
+        with responses.RequestsMock() as rsps:
+            self._mock_runsync_completed(rsps, "EP", b64)
+            result = m.run_segment(
+                endpoint_id="EP", api_key="key", segment_num=2,
+                duration=420, seed=-1, poll_interval=0,
+            )
+        assert result["output"]["audio_base64"] == b64
+        assert result["output"]["seed"] == 777
+
+    def test_run_segment_retries_on_transient_failure(self, monkeypatch):
+        m = _load()
+        import pytest
+        # Track retries using monkeypatch + a counter
+        attempt_count = [0]
+        original_submit = m.submit_job
+
+        def submit_with_failures(endpoint_id, api_key, payload):
+            attempt_count[0] += 1
+            if attempt_count[0] < 3:
+                raise requests.exceptions.ConnectionError("boom")
+            return {"id": "j1", "status": "COMPLETED",
+                    "output": {"audio_base64": "AAA", "duration": 420}}
+
+        monkeypatch.setattr(m, "submit_job", submit_with_failures)
+        result = m.run_segment(
+            endpoint_id="EP", api_key="key", segment_num=1,
+            duration=420, seed=-1, poll_interval=0, retry_sleep=0,
+        )
+        assert result["output"]["audio_base64"] == "AAA"
+        assert attempt_count[0] == 3
+
+    def test_run_segment_gives_up_after_max_retries(self):
+        m = _load()
+        import pytest
+        with responses.RequestsMock() as rsps:
+            for _ in range(m.MAX_SEGMENT_RETRIES):
+                rsps.add(responses.POST,
+                         "https://api.runpod.ai/v2/EP/runsync",
+                         body=requests.exceptions.ConnectionError("boom"))
+            with pytest.raises(RuntimeError, match="segment 4"):
+                m.run_segment(
+                    endpoint_id="EP", api_key="key", segment_num=4,
+                    duration=420, seed=-1, poll_interval=0, retry_sleep=0,
+                )
