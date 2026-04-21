@@ -353,3 +353,66 @@ class TestSaveFlac:
         import pytest
         with pytest.raises(ValueError, match="empty"):
             m.save_flac_from_output({"audio_base64": ""}, tmp_path / "x.flac")
+
+
+class TestFFmpegCommand:
+    def test_command_lists_all_inputs(self, tmp_path):
+        m = _load()
+        paths = [tmp_path / f"s{i:02d}.flac" for i in range(1, 8)]
+        cmd = m.build_ffmpeg_command(paths, tmp_path / "out.flac",
+                                      crossfade_sec=30)
+        # -i appears once per input
+        assert cmd.count("-i") == 7
+        for p in paths:
+            assert str(p) in cmd
+
+    def test_command_uses_qsin_equal_power_curves(self, tmp_path):
+        m = _load()
+        paths = [tmp_path / f"s{i:02d}.flac" for i in range(1, 8)]
+        cmd = m.build_ffmpeg_command(paths, tmp_path / "out.flac", 30)
+        filter_str = cmd[cmd.index("-filter_complex") + 1]
+        assert "c1=qsin" in filter_str
+        assert "c2=qsin" in filter_str
+        assert "d=30" in filter_str
+
+    def test_command_chains_six_crossfades_for_seven_inputs(self, tmp_path):
+        m = _load()
+        paths = [tmp_path / f"s{i:02d}.flac" for i in range(1, 8)]
+        cmd = m.build_ffmpeg_command(paths, tmp_path / "out.flac", 30)
+        filter_str = cmd[cmd.index("-filter_complex") + 1]
+        assert filter_str.count("acrossfade=") == 6
+
+    def test_command_outputs_flac_codec(self, tmp_path):
+        m = _load()
+        paths = [tmp_path / f"s{i:02d}.flac" for i in range(1, 8)]
+        cmd = m.build_ffmpeg_command(paths, tmp_path / "out.flac", 30)
+        # -c:a flac must appear
+        i = cmd.index("-c:a")
+        assert cmd[i + 1] == "flac"
+
+    def test_command_rejects_fewer_than_two_inputs(self, tmp_path):
+        m = _load()
+        import pytest
+        with pytest.raises(ValueError):
+            m.build_ffmpeg_command([tmp_path / "s.flac"], tmp_path / "o.flac", 30)
+
+    def test_stitch_segments_invokes_ffmpeg(self, tmp_path, monkeypatch):
+        m = _load()
+        calls = []
+        def fake_run(cmd, check, capture_output):
+            calls.append(cmd)
+            # Create an empty output file so post-checks succeed.
+            Path(cmd[cmd.index("-map") + 2 if False else -1]).write_bytes(b"")
+            class R:
+                returncode = 0
+                stdout = b""
+                stderr = b""
+            return R()
+        monkeypatch.setattr(m.subprocess, "run", fake_run)
+        paths = [tmp_path / f"s{i:02d}.flac" for i in range(1, 8)]
+        for p in paths:
+            p.write_bytes(b"x")
+        out = tmp_path / "final.flac"
+        m.stitch_segments(paths, out, crossfade_sec=30)
+        assert len(calls) == 1
+        assert "ffmpeg" in calls[0][0]

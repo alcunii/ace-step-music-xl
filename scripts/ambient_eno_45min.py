@@ -284,5 +284,67 @@ def save_flac_from_output(output: dict, path: Path) -> None:
     path.write_bytes(base64.b64decode(b64, validate=True))
 
 
+# ---------------------------------------------------------------------------
+# ffmpeg crossfade stitcher
+# ---------------------------------------------------------------------------
+def build_ffmpeg_command(
+    segment_paths: list[Path],
+    out_path: Path,
+    crossfade_sec: int,
+) -> list[str]:
+    """Build the ffmpeg argv for chained acrossfade with equal-power qsin
+    curves.
+
+    For N input files, produces (N-1) chained acrossfade filters; the output
+    of each feeds the next, so no audio is ever truncated more than once.
+    """
+    n = len(segment_paths)
+    if n < 2:
+        raise ValueError(f"need at least 2 segments to crossfade, got {n}")
+
+    cmd: list[str] = ["ffmpeg", "-y"]  # -y: overwrite out_path without prompt
+    for p in segment_paths:
+        cmd += ["-i", str(p)]
+
+    # Chain: [0][1]acrossfade=...[a01]; [a01][2]acrossfade=...[a02]; ...
+    filters: list[str] = []
+    prev_label = "0"
+    for i in range(1, n):
+        next_label = f"a{i:02d}" if i < n - 1 else "out"
+        filters.append(
+            f"[{prev_label}][{i}]"
+            f"acrossfade=d={crossfade_sec}:c1=qsin:c2=qsin"
+            f"[{next_label}]"
+        )
+        prev_label = next_label
+
+    cmd += [
+        "-filter_complex", "; ".join(filters),
+        "-map", "[out]",
+        "-c:a", "flac",
+        str(out_path),
+    ]
+    return cmd
+
+
+def stitch_segments(
+    segment_paths: list[Path],
+    out_path: Path,
+    crossfade_sec: int = CROSSFADE_SEC,
+) -> None:
+    """Run ffmpeg to stitch segments with equal-power crossfades. Raises
+    RuntimeError with ffmpeg's stderr on non-zero exit."""
+    for p in segment_paths:
+        if not Path(p).exists():
+            raise FileNotFoundError(f"segment not found: {p}")
+    cmd = build_ffmpeg_command(segment_paths, out_path, crossfade_sec)
+    result = subprocess.run(cmd, check=False, capture_output=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg stitching failed (exit {result.returncode}):\n"
+            f"{result.stderr.decode(errors='replace')}"
+        )
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit("main() not yet implemented (Task 10)")
