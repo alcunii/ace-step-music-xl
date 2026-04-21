@@ -35,12 +35,13 @@ import requests
 # Source: https://github.com/ace-step/ACE-Step-1.5/blob/main/docs/en/INFERENCE.md
 # ---------------------------------------------------------------------------
 LOCKED_PALETTE = (
-    "Eno-inspired tonal ambient, slowly evolving pads, soft felted piano "
-    "notes scattered over sustained synthesizer bed, warm analog tape "
-    "bloom, long plate-reverb tails, harmonic major key, 50 BPM in 4/4 "
-    "(barely perceptible pulse), no percussion, no vocals, spacious "
-    "stereo field, gentle overtone shimmer, meditative calm atmosphere, "
-    "pristine recording"
+    "Ambient drone music for meditation, 60 BPM pulseless pacing, "
+    "no percussion, no vocals, slowly evolving warm synth pads with "
+    "wavetable textures, distant felted piano notes, long plate "
+    "reverb with 5-8 second decay, subtle field recording of gentle "
+    "rain and distant wind, major pentatonic tonality, low dynamic "
+    "range, seamless instrument blending, wide stereo field, "
+    "weightless meditative atmosphere"
 )
 
 SEGMENT_DESCRIPTORS = [

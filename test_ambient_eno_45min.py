@@ -24,7 +24,11 @@ class TestConstants:
     def test_locked_palette_is_non_empty_string(self):
         m = _load()
         assert isinstance(m.LOCKED_PALETTE, str)
-        assert "Eno" in m.LOCKED_PALETTE or "tonal ambient" in m.LOCKED_PALETTE
+        lowered = m.LOCKED_PALETTE.lower()
+        assert "ambient" in lowered
+        assert "meditat" in lowered  # "meditation" or "meditative"
+        assert "no percussion" in lowered
+        assert "no vocals" in lowered
         assert len(m.LOCKED_PALETTE) > 200
 
     def test_segment_descriptors_has_seven_entries(self):
