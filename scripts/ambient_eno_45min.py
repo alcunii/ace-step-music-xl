@@ -266,5 +266,23 @@ def run_segment(
     )
 
 
+# ---------------------------------------------------------------------------
+# FLAC save from RunPod output
+# ---------------------------------------------------------------------------
+def save_flac_from_output(output: dict, path: Path) -> None:
+    """Decode the response's audio_base64 and write it to `path` as raw bytes.
+
+    Does NOT transcode — the endpoint was asked for audio_format="flac", so
+    the bytes are already FLAC.
+    """
+    b64 = output.get("audio_base64", "")
+    if not b64:
+        if "audio_base64" not in output:
+            raise ValueError("response missing 'audio_base64' field")
+        raise ValueError("response 'audio_base64' is empty")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(base64.b64decode(b64, validate=True))
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit("main() not yet implemented (Task 10)")

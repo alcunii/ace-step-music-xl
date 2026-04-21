@@ -1,4 +1,5 @@
 """Unit tests for scripts/ambient_eno_45min.py orchestrator."""
+import base64
 import importlib.util
 import json
 import sys
@@ -323,3 +324,32 @@ class TestRunSegment:
                     endpoint_id="EP", api_key="key", segment_num=4,
                     duration=420, seed=-1, poll_interval=0, retry_sleep=0,
                 )
+
+
+class TestSaveFlac:
+    def test_save_writes_decoded_bytes(self, tmp_path):
+        m = _load()
+        raw = b"notactualflacbutfine"
+        output = {"audio_base64": base64.b64encode(raw).decode()}
+        path = tmp_path / "s01.flac"
+        m.save_flac_from_output(output, path)
+        assert path.read_bytes() == raw
+
+    def test_save_creates_parent_dir(self, tmp_path):
+        m = _load()
+        output = {"audio_base64": base64.b64encode(b"x").decode()}
+        path = tmp_path / "deep" / "nested" / "s.flac"
+        m.save_flac_from_output(output, path)
+        assert path.exists()
+
+    def test_save_raises_on_missing_audio(self, tmp_path):
+        m = _load()
+        import pytest
+        with pytest.raises(ValueError, match="audio_base64"):
+            m.save_flac_from_output({}, tmp_path / "x.flac")
+
+    def test_save_raises_on_empty_audio(self, tmp_path):
+        m = _load()
+        import pytest
+        with pytest.raises(ValueError, match="empty"):
+            m.save_flac_from_output({"audio_base64": ""}, tmp_path / "x.flac")
