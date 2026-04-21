@@ -287,9 +287,27 @@ def save_flac_from_output(output: dict, path: Path) -> None:
     """
     b64 = output.get("audio_base64", "")
     if not b64:
+        # Diagnostic: dump what actually came back so the caller can see
+        # whether this is a handler error, an S3 URL reference, or something
+        # else. Truncate b64-ish values to keep the message readable.
+        if not isinstance(output, dict):
+            raise ValueError(
+                f"response output is not a dict: {type(output).__name__} — {output!r:.200}"
+            )
+        summary = {
+            k: (f"<str len={len(v)}>" if isinstance(v, str) and len(v) > 200 else v)
+            for k, v in output.items()
+        }
         if "audio_base64" not in output:
-            raise ValueError("response missing 'audio_base64' field")
-        raise ValueError("response 'audio_base64' is empty")
+            raise ValueError(
+                f"response missing 'audio_base64' field. "
+                f"Output keys: {sorted(output.keys())}. "
+                f"Output summary: {summary}"
+            )
+        raise ValueError(
+            f"response 'audio_base64' is empty. "
+            f"Output summary: {summary}"
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(base64.b64decode(b64, validate=True))
 
