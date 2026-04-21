@@ -386,7 +386,8 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p.add_argument("--stitch-only", action="store_true",
                    help="Skip all API calls; just run ffmpeg on existing segments.")
     p.add_argument("--dry-run", action="store_true",
-                   help="Print the 7 payloads without submitting.")
+                   help="Print the 7 /runsync envelopes without submitting. "
+                        "Offline; does NOT require RUNPOD_API_KEY or ffmpeg.")
     p.add_argument("--pin-seeds-from", default=None, metavar="RUN-ID",
                    help="Reuse exact seeds from a prior run's sidecars.")
     p.add_argument("--duration", type=int, default=SEGMENT_DURATION_SEC,
@@ -447,17 +448,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         pinned_seeds = load_pinned_seeds(prior)
         _print(f"Pinning seeds from {prior}: {pinned_seeds}")
 
-    # Dry-run: print payloads, exit.
+    # Dry-run: print full /runsync envelopes, exit. Offline — does NOT
+    # require RUNPOD_API_KEY or ffmpeg to be present.
     if args.dry_run:
         run_dir.mkdir(parents=True, exist_ok=True)
         for i in range(1, SEGMENT_COUNT + 1):
             seed = pinned_seeds[i - 1] if pinned_seeds else -1
-            payload = build_payload(i, args.duration, seed)
+            envelope = {"input": build_payload(i, args.duration, seed)}
             _print(
                 f"\n--- segment {i}/{SEGMENT_COUNT} "
                 f"({SEGMENT_DESCRIPTORS[i-1]['phase']}) ---"
             )
-            _print(json.dumps(payload, indent=2))
+            _print(json.dumps(envelope, indent=2))
         return 0
 
     preflight_checks(api_key, endpoint_id, AMBIENT_OUT_DIR)
@@ -491,6 +493,14 @@ def main(argv: Optional[list[str]] = None) -> int:
                 seeds_actual[i - 1] = int(read_sidecar(sidecar_path)["seed"])
                 _print(f"[{i}/{SEGMENT_COUNT}] skip — already exists")
                 continue
+
+        # Orphaned FLAC (crash between FLAC-write and sidecar-write) — warn
+        # user that a previously-generated segment is about to be overwritten.
+        if seg_path.exists() and not sidecar_path.exists():
+            _print(
+                f"[{i}/{SEGMENT_COUNT}] WARN: orphaned FLAC at {seg_path.name} "
+                f"(missing sidecar); regenerating — prior segment will be replaced"
+            )
 
         seed = pinned_seeds[i - 1] if pinned_seeds else -1
         _print(
