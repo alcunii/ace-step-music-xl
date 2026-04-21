@@ -394,13 +394,14 @@ class TestFFmpegCommand:
         filter_str = cmd[cmd.index("-filter_complex") + 1]
         assert filter_str.count("acrossfade=") == 6
 
-    def test_command_outputs_flac_codec(self, tmp_path):
+    def test_command_outputs_mp3_codec(self, tmp_path):
         m = _load()
-        paths = [tmp_path / f"s{i:02d}.flac" for i in range(1, 8)]
-        cmd = m.build_ffmpeg_command(paths, tmp_path / "out.flac", 30)
-        # -c:a flac must appear
+        paths = [tmp_path / f"s{i:02d}.mp3" for i in range(1, 8)]
+        cmd = m.build_ffmpeg_command(paths, tmp_path / "out.mp3", 30)
         i = cmd.index("-c:a")
-        assert cmd[i + 1] == "flac"
+        assert cmd[i + 1] == "libmp3lame"
+        b = cmd.index("-b:a")
+        assert cmd[b + 1] == "192k"
 
     def test_command_rejects_fewer_than_two_inputs(self, tmp_path):
         m = _load()
@@ -596,7 +597,7 @@ class TestMain:
         exit_code = m.main(["--stitch-only", "--run-id", "rs1"])
         assert exit_code == 0
         assert len(calls) == 1
-        final = run_dir / "eno_45min_final.flac"
+        final = run_dir / "eno_45min_final.mp3"
         assert final.exists()
 
     def test_full_run_writes_7_segments_and_manifest(self, tmp_path,
@@ -623,7 +624,7 @@ class TestMain:
             assert (run_dir / f"segment_{i:02d}.mp3").exists()
             assert (run_dir / f"segment_{i:02d}.json").exists()
         assert (run_dir / "manifest.json").exists()
-        assert (run_dir / "eno_45min_final.flac").exists()
+        assert (run_dir / "eno_45min_final.mp3").exists()
         manifest = json.loads((run_dir / "manifest.json").read_text())
         assert manifest["seeds"] == [1001, 1002, 1003, 1004, 1005, 1006, 1007]
 

@@ -357,7 +357,12 @@ def build_ffmpeg_command(
     cmd += [
         "-filter_complex", "; ".join(filters),
         "-map", "[out]",
-        "-c:a", "flac",
+        # MP3 at 192 kbps — ~7-8x smaller than re-encoding to FLAC.
+        # Inputs are MP3 ~128 kbps; 192 kbps gives re-encode headroom to
+        # avoid compounding generational loss while staying compact enough
+        # for convenient distribution (46 min ≈ 66 MB).
+        "-c:a", "libmp3lame",
+        "-b:a", "192k",
         str(out_path),
     ]
     return cmd
@@ -511,7 +516,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         if missing:
             _print(f"Cannot stitch — missing segments: {missing}")
             return 2
-        final = run_dir / "eno_45min_final.flac"
+        final = run_dir / "eno_45min_final.mp3"
         _print(f"Stitching {len(seg_paths)} segments → {final}")
         stitch_segments(seg_paths, final, CROSSFADE_SEC)
         _print(f"Done: {final}")
@@ -595,7 +600,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if missing:
         _print(f"Skipping stitch — {len(missing)} segments still missing.")
         return 0
-    final = run_dir / "eno_45min_final.flac"
+    final = run_dir / "eno_45min_final.mp3"
     _print(f"Stitching {len(seg_paths)} segments → {final}")
     stitch_segments(seg_paths, final, CROSSFADE_SEC)
     _print(f"\nDONE: {final}")
