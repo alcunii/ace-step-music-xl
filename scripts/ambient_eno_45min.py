@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Generate a ~46-minute Eno-style tonal ambient piece via the ACE-Step 1.5 XL
+serverless endpoint. Submits 7 text2music segments sequentially, saves each as
+FLAC with a JSON sidecar, and stitches them locally with ffmpeg acrossfade.
+
+Design: docs/superpowers/specs/2026-04-21-ambient-eno-45min-design.md
+
+Usage:
+  export RUNPOD_API_KEY=<your-key>
+  export RUNPOD_ENDPOINT_ID=nwqnd0duxc6o38
+  python3 scripts/ambient_eno_45min.py [--run-id ID] [--force] [--segment N]
+                                       [--stitch-only] [--dry-run]
+                                       [--pin-seeds-from RUN-ID]
+                                       [--duration SEC]
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+import requests
+
+# ---------------------------------------------------------------------------
+# Constants — locked sonic palette, per-segment evolution, and the official
+# ACE-Step 1.5 XL-base "High-Quality Generation" preset.
+# Source: https://github.com/ace-step/ACE-Step-1.5/blob/main/docs/en/INFERENCE.md
+# ---------------------------------------------------------------------------
+LOCKED_PALETTE = (
+    "Eno-inspired tonal ambient, slowly evolving pads, soft felted piano "
+    "notes scattered over sustained synthesizer bed, warm analog tape "
+    "bloom, long plate-reverb tails, harmonic major key, 50 BPM in 4/4 "
+    "(barely perceptible pulse), no percussion, no vocals, spacious "
+    "stereo field, gentle overtone shimmer, meditative calm atmosphere, "
+    "pristine recording"
+)
+
+SEGMENT_DESCRIPTORS = [
+    {"phase": "Inhale-1", "descriptors": "sparse piano notes, soft entry, first unfolding"},
+    {"phase": "Inhale-2", "descriptors": "settling pads, slightly lower register"},
+    {"phase": "Inhale-3", "descriptors": "deepest stillness, fewest events, suspended"},
+    {"phase": "Turn",     "descriptors": "widest reverb, slowest harmonic change, held breath"},
+    {"phase": "Exhale-1", "descriptors": "overtones emerging, air widening"},
+    {"phase": "Exhale-2", "descriptors": "sparser piano, more air, upper register glow"},
+    {"phase": "Dissolve", "descriptors": "dissolving pads, long diminuendo, fade into silence"},
+]
+
+PRESET = {
+    "inference_steps": 64,
+    "guidance_scale": 8.0,
+    "shift": 3.0,
+    "use_adg": True,
+    "cfg_interval_start": 0.0,
+    "cfg_interval_end": 1.0,
+    "infer_method": "ode",
+}
+
+SEGMENT_COUNT = 7
+SEGMENT_DURATION_SEC = 420
+CROSSFADE_SEC = 30
+DEFAULT_ENDPOINT_ID = "nwqnd0duxc6o38"
+
+POLL_INTERVAL_SEC = 5
+REQUEST_TIMEOUT_SEC = 1800
+MAX_TRANSIENT_404 = 6
+MAX_SEGMENT_RETRIES = 3
+
+
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit("main() not yet implemented (Task 10)")
