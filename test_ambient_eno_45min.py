@@ -416,3 +416,31 @@ class TestFFmpegCommand:
         m.stitch_segments(paths, out, crossfade_sec=30)
         assert len(calls) == 1
         assert "ffmpeg" in calls[0][0]
+
+
+class TestPreflight:
+    def test_passes_when_all_deps_present(self, tmp_path, monkeypatch):
+        m = _load()
+        monkeypatch.setattr(m.shutil, "which",
+                            lambda x: "/usr/bin/ffmpeg" if x == "ffmpeg" else None)
+        # should not raise
+        m.preflight_checks(api_key="k", endpoint_id="EP", out_dir=tmp_path)
+
+    def test_fails_when_api_key_missing(self, tmp_path):
+        m = _load()
+        import pytest
+        with pytest.raises(RuntimeError, match="RUNPOD_API_KEY"):
+            m.preflight_checks(api_key="", endpoint_id="EP", out_dir=tmp_path)
+
+    def test_fails_when_endpoint_missing(self, tmp_path):
+        m = _load()
+        import pytest
+        with pytest.raises(RuntimeError, match="endpoint"):
+            m.preflight_checks(api_key="k", endpoint_id="", out_dir=tmp_path)
+
+    def test_fails_when_ffmpeg_missing(self, tmp_path, monkeypatch):
+        m = _load()
+        import pytest
+        monkeypatch.setattr(m.shutil, "which", lambda x: None)
+        with pytest.raises(RuntimeError, match="ffmpeg"):
+            m.preflight_checks(api_key="k", endpoint_id="EP", out_dir=tmp_path)

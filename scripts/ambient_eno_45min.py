@@ -346,5 +346,27 @@ def stitch_segments(
         )
 
 
+# ---------------------------------------------------------------------------
+# Pre-flight checks — fail fast before any GPU spend
+# ---------------------------------------------------------------------------
+def preflight_checks(api_key: str, endpoint_id: str, out_dir: Path) -> None:
+    """Raise RuntimeError on any missing precondition. Called before the
+    orchestrator submits its first segment."""
+    if not api_key:
+        raise RuntimeError(
+            "RUNPOD_API_KEY is not set — export it before running"
+        )
+    if not endpoint_id:
+        raise RuntimeError("endpoint id is not set")
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError(
+            "ffmpeg not found on $PATH — install ffmpeg before running"
+        )
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if not os.access(out_dir, os.W_OK):
+        raise RuntimeError(f"output directory not writable: {out_dir}")
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit("main() not yet implemented (Task 10)")
