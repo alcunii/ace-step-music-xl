@@ -487,8 +487,8 @@ class TestRunDir:
         m = _load()
         rd = m.resolve_run_dir(base=tmp_path, run_id=None)
         assert rd.parent == tmp_path
-        # Format: YYYY-MM-DD-HHMM (16 chars)
-        assert len(rd.name) == 16
+        # Format: YYYY-MM-DD-HHMM (15 chars)
+        assert len(rd.name) == 15
         assert rd.name[4] == "-" and rd.name[7] == "-" and rd.name[10] == "-"
 
     def test_resolve_run_dir_reuses_supplied_id(self, tmp_path):

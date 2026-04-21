@@ -398,7 +398,7 @@ def resolve_run_dir(base: Path, run_id: Optional[str]) -> Path:
     YYYY-MM-DD-HHMM id. Does NOT create the directory — caller does that."""
     import datetime as _dt
     if run_id is None:
-        run_id = _dt.datetime.now().strftime("%Y-%m-%d-%H%M%S")[:16]
+        run_id = _dt.datetime.now().strftime("%Y-%m-%d-%H%M")
     return Path(base) / run_id
 
 
