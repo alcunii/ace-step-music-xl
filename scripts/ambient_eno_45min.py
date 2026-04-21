@@ -67,6 +67,7 @@ SEGMENT_COUNT = 7
 SEGMENT_DURATION_SEC = 420
 CROSSFADE_SEC = 30
 DEFAULT_ENDPOINT_ID = "nwqnd0duxc6o38"
+AMBIENT_OUT_DIR = Path(__file__).resolve().parent.parent / "out" / "ambient"
 
 POLL_INTERVAL_SEC = 5
 REQUEST_TIMEOUT_SEC = 1800
@@ -423,5 +424,134 @@ def load_pinned_seeds(run_dir: Path) -> list[int]:
     return seeds
 
 
-if __name__ == "__main__":  # pragma: no cover
-    sys.exit("main() not yet implemented (Task 10)")
+# ---------------------------------------------------------------------------
+# Main orchestration
+# ---------------------------------------------------------------------------
+def _print(msg: str) -> None:
+    print(msg, flush=True)
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    args = parse_args(argv)
+    api_key = os.environ.get("RUNPOD_API_KEY", "").strip()
+    endpoint_id = os.environ.get(
+        "RUNPOD_ENDPOINT_ID", DEFAULT_ENDPOINT_ID,
+    ).strip()
+
+    run_dir = resolve_run_dir(AMBIENT_OUT_DIR, args.run_id)
+    _print(f"Run directory: {run_dir}")
+
+    pinned_seeds: Optional[list[int]] = None
+    if args.pin_seeds_from:
+        prior = resolve_run_dir(AMBIENT_OUT_DIR, args.pin_seeds_from)
+        pinned_seeds = load_pinned_seeds(prior)
+        _print(f"Pinning seeds from {prior}: {pinned_seeds}")
+
+    # Dry-run: print payloads, exit.
+    if args.dry_run:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        for i in range(1, SEGMENT_COUNT + 1):
+            seed = pinned_seeds[i - 1] if pinned_seeds else -1
+            payload = build_payload(i, args.duration, seed)
+            _print(
+                f"\n--- segment {i}/{SEGMENT_COUNT} "
+                f"({SEGMENT_DESCRIPTORS[i-1]['phase']}) ---"
+            )
+            _print(json.dumps(payload, indent=2))
+        return 0
+
+    preflight_checks(api_key, endpoint_id, AMBIENT_OUT_DIR)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    seg_paths = segment_paths_for(run_dir)
+
+    # Stitch-only: skip API calls, run ffmpeg only.
+    if args.stitch_only:
+        missing = [p for p in seg_paths if not p.exists()]
+        if missing:
+            _print(f"Cannot stitch — missing segments: {missing}")
+            return 2
+        final = run_dir / "eno_45min_final.flac"
+        _print(f"Stitching {len(seg_paths)} segments → {final}")
+        stitch_segments(seg_paths, final, CROSSFADE_SEC)
+        _print(f"Done: {final}")
+        return 0
+
+    # Full run (or targeted --segment) — generate what's missing.
+    seeds_actual: list[int] = [0] * SEGMENT_COUNT
+    is_targeted = args.segment is not None
+
+    for i in range(1, SEGMENT_COUNT + 1):
+        seg_path = seg_paths[i - 1]
+        sidecar_path = run_dir / f"segment_{i:02d}.json"
+        # Skip if files exist and we're not forced and either:
+        # - Not in targeted mode (normal resume), OR
+        # - It's not the targeted segment
+        if not args.force and seg_path.exists() and sidecar_path.exists():
+            if not is_targeted or i != args.segment:
+                seeds_actual[i - 1] = int(read_sidecar(sidecar_path)["seed"])
+                _print(f"[{i}/{SEGMENT_COUNT}] skip — already exists")
+                continue
+
+        seed = pinned_seeds[i - 1] if pinned_seeds else -1
+        _print(
+            f"[{i}/{SEGMENT_COUNT}] submitting "
+            f"{SEGMENT_DESCRIPTORS[i-1]['phase']} "
+            f"(duration={args.duration}s, seed={seed})..."
+        )
+        t0 = time.time()
+        result = run_segment(
+            endpoint_id=endpoint_id, api_key=api_key,
+            segment_num=i, duration=args.duration, seed=seed,
+        )
+        elapsed = time.time() - t0
+        output = result.get("output", {})
+        actual_seed = int(output.get("seed", seed))
+        seeds_actual[i - 1] = actual_seed
+        save_flac_from_output(output, seg_path)
+        write_sidecar(sidecar_path, {
+            "segment_num": i,
+            "phase": SEGMENT_DESCRIPTORS[i - 1]["phase"],
+            "seed": actual_seed,
+            "prompt": build_segment_prompt(i),
+            "duration_requested": args.duration,
+            "duration_actual": float(output.get("duration", args.duration)),
+            "sample_rate": int(output.get("sample_rate", 48000)),
+            "endpoint_id": endpoint_id,
+            "run_id": run_dir.name,
+        })
+        _print(
+            f"[{i}/{SEGMENT_COUNT}] done in {elapsed:.1f}s — "
+            f"seed={actual_seed} → {seg_path.name}"
+        )
+
+    # Fill in seeds for any skipped segments (already on disk).
+    for i in range(1, SEGMENT_COUNT + 1):
+        if seeds_actual[i - 1] == 0:
+            sc = run_dir / f"segment_{i:02d}.json"
+            if sc.exists():
+                seeds_actual[i - 1] = int(read_sidecar(sc)["seed"])
+
+    write_manifest(
+        path=run_dir / "manifest.json",
+        run_id=run_dir.name,
+        endpoint_id=endpoint_id,
+        seeds=seeds_actual,
+        segment_duration=args.duration,
+        crossfade_sec=CROSSFADE_SEC,
+        locked_palette=LOCKED_PALETTE,
+    )
+
+    # Stitch if we have all 7 segments on disk.
+    missing = [p for p in seg_paths if not p.exists()]
+    if missing:
+        _print(f"Skipping stitch — {len(missing)} segments still missing.")
+        return 0
+    final = run_dir / "eno_45min_final.flac"
+    _print(f"Stitching {len(seg_paths)} segments → {final}")
+    stitch_segments(seg_paths, final, CROSSFADE_SEC)
+    _print(f"\nDONE: {final}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

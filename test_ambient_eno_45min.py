@@ -517,3 +517,130 @@ class TestRunDir:
         import pytest
         with pytest.raises(FileNotFoundError):
             m.load_pinned_seeds(tmp_path / "does-not-exist")
+
+
+class TestMain:
+    def _mock_runsync(self, rsps, endpoint_id, seed_base):
+        """Add 7 mocked /runsync calls returning distinct seeds.
+
+        /runsync returns status=COMPLETED synchronously with output inline,
+        so run_segment never calls /status for these — only POSTs mocked.
+        """
+        for i in range(1, 8):
+            rsps.add(
+                responses.POST,
+                f"https://api.runpod.ai/v2/{endpoint_id}/runsync",
+                json={
+                    "id": f"job{i}", "status": "COMPLETED",
+                    "output": {
+                        "audio_base64": base64.b64encode(f"seg{i}".encode()).decode(),
+                        "duration": 420.0, "sample_rate": 48000,
+                        "seed": seed_base + i,
+                    },
+                },
+                status=200,
+            )
+
+    def test_dry_run_submits_nothing(self, tmp_path, monkeypatch, capsys):
+        m = _load()
+        monkeypatch.setenv("RUNPOD_API_KEY", "k")
+        monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "EP")
+        monkeypatch.setattr(m, "AMBIENT_OUT_DIR", tmp_path)
+        monkeypatch.setattr(m.shutil, "which", lambda x: "/usr/bin/ffmpeg")
+        exit_code = m.main(["--dry-run", "--run-id", "dry1"])
+        assert exit_code == 0
+        out = capsys.readouterr().out
+        # 7 payload dumps must appear
+        assert out.count('"task_type": "text2music"') == 7
+        # No FLAC should have been written
+        assert not any((tmp_path / "dry1").glob("segment_*.flac"))
+
+    def test_stitch_only_runs_ffmpeg(self, tmp_path, monkeypatch):
+        m = _load()
+        monkeypatch.setenv("RUNPOD_API_KEY", "k")
+        monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "EP")
+        monkeypatch.setattr(m, "AMBIENT_OUT_DIR", tmp_path)
+        monkeypatch.setattr(m.shutil, "which", lambda x: "/usr/bin/ffmpeg")
+        run_dir = tmp_path / "rs1"
+        run_dir.mkdir()
+        paths = m.segment_paths_for(run_dir)
+        for p in paths:
+            p.write_bytes(b"x")  # 7 fake FLACs
+        calls = []
+        def fake_run(cmd, check, capture_output):
+            calls.append(cmd)
+            Path(cmd[-1]).write_bytes(b"finalbytes")
+            class R:
+                returncode = 0; stdout = b""; stderr = b""
+            return R()
+        monkeypatch.setattr(m.subprocess, "run", fake_run)
+        exit_code = m.main(["--stitch-only", "--run-id", "rs1"])
+        assert exit_code == 0
+        assert len(calls) == 1
+        final = run_dir / "eno_45min_final.flac"
+        assert final.exists()
+
+    def test_full_run_writes_7_segments_and_manifest(self, tmp_path,
+                                                     monkeypatch):
+        m = _load()
+        monkeypatch.setenv("RUNPOD_API_KEY", "k")
+        monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "EP")
+        monkeypatch.setattr(m, "AMBIENT_OUT_DIR", tmp_path)
+        monkeypatch.setattr(m.shutil, "which", lambda x: "/usr/bin/ffmpeg")
+        def fake_run(cmd, check, capture_output):
+            Path(cmd[-1]).write_bytes(b"final")
+            class R:
+                returncode = 0; stdout = b""; stderr = b""
+            return R()
+        monkeypatch.setattr(m.subprocess, "run", fake_run)
+        with responses.RequestsMock() as rsps:
+            self._mock_runsync(rsps, "EP", seed_base=1000)
+            exit_code = m.main(
+                ["--run-id", "full1", "--duration", "10"],
+            )
+        assert exit_code == 0
+        run_dir = tmp_path / "full1"
+        for i in range(1, 8):
+            assert (run_dir / f"segment_{i:02d}.flac").exists()
+            assert (run_dir / f"segment_{i:02d}.json").exists()
+        assert (run_dir / "manifest.json").exists()
+        assert (run_dir / "eno_45min_final.flac").exists()
+        manifest = json.loads((run_dir / "manifest.json").read_text())
+        assert manifest["seeds"] == [1001, 1002, 1003, 1004, 1005, 1006, 1007]
+
+    def test_resume_skips_existing_segments(self, tmp_path, monkeypatch):
+        m = _load()
+        monkeypatch.setenv("RUNPOD_API_KEY", "k")
+        monkeypatch.setenv("RUNPOD_ENDPOINT_ID", "EP")
+        monkeypatch.setattr(m, "AMBIENT_OUT_DIR", tmp_path)
+        monkeypatch.setattr(m.shutil, "which", lambda x: "/usr/bin/ffmpeg")
+        run_dir = tmp_path / "res1"
+        run_dir.mkdir()
+        # Pre-create segments 1..5 so only 6 + 7 need generating.
+        for i in range(1, 6):
+            (run_dir / f"segment_{i:02d}.flac").write_bytes(b"pre")
+            m.write_sidecar(run_dir / f"segment_{i:02d}.json", {"seed": 100 + i})
+        def fake_run(cmd, check, capture_output):
+            Path(cmd[-1]).write_bytes(b"final")
+            class R:
+                returncode = 0; stdout = b""; stderr = b""
+            return R()
+        monkeypatch.setattr(m.subprocess, "run", fake_run)
+        with responses.RequestsMock() as rsps:
+            # Only 2 segments should be generated (sync COMPLETED returns
+            # output inline — no /status GET needed).
+            for i in (6, 7):
+                rsps.add(responses.POST,
+                         "https://api.runpod.ai/v2/EP/runsync",
+                         json={"id": f"j{i}", "status": "COMPLETED",
+                               "output": {
+                                   "audio_base64": base64.b64encode(b"x").decode(),
+                                   "duration": 420, "sample_rate": 48000,
+                                   "seed": 100 + i,
+                               }},
+                         status=200)
+            exit_code = m.main(["--run-id", "res1"])
+            # Exactly 2 runsync POSTs — one per missing segment.
+            runsyncs = [c for c in rsps.calls if c.request.method == "POST"]
+            assert len(runsyncs) == 2
+        assert exit_code == 0
