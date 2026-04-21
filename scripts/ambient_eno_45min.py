@@ -74,5 +74,37 @@ MAX_TRANSIENT_404 = 6
 MAX_SEGMENT_RETRIES = 3
 
 
+# ---------------------------------------------------------------------------
+# Prompt + payload builders (pure functions)
+# ---------------------------------------------------------------------------
+def build_segment_prompt(segment_num: int) -> str:
+    """Return the full text2music prompt for segment `segment_num` (1..7).
+
+    Locked palette + the segment's unique descriptors, comma-joined.
+    """
+    if not 1 <= segment_num <= SEGMENT_COUNT:
+        raise ValueError(
+            f"segment_num must be in 1..{SEGMENT_COUNT}, got {segment_num}"
+        )
+    extra = SEGMENT_DESCRIPTORS[segment_num - 1]["descriptors"]
+    return f"{LOCKED_PALETTE}, {extra}"
+
+
+def build_payload(segment_num: int, duration: int, seed: int) -> dict:
+    """Build the RunPod /runsync `input` payload for one segment."""
+    return {
+        "task_type": "text2music",
+        "prompt": build_segment_prompt(segment_num),
+        "lyrics": "",
+        "instrumental": True,
+        "duration": duration,
+        "seed": seed,
+        "batch_size": 1,
+        "audio_format": "flac",
+        "thinking": False,
+        **PRESET,
+    }
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit("main() not yet implemented (Task 10)")
