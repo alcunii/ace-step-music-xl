@@ -390,14 +390,23 @@ def stitch_segments(
 # ---------------------------------------------------------------------------
 # Pre-flight checks — fail fast before any GPU spend
 # ---------------------------------------------------------------------------
-def preflight_checks(api_key: str, endpoint_id: str, out_dir: Path) -> None:
-    """Raise RuntimeError on any missing precondition. Called before the
-    orchestrator submits its first segment."""
-    if not api_key:
+def preflight_checks(
+    api_key: str,
+    endpoint_id: str,
+    out_dir: Path,
+    *,
+    require_api: bool = True,
+) -> None:
+    """Raise RuntimeError on any missing precondition.
+
+    Always checks ffmpeg and out_dir writability. Only checks API credentials
+    when require_api=True — offline modes (stitch-only) should pass False.
+    """
+    if require_api and not api_key:
         raise RuntimeError(
             "RUNPOD_API_KEY is not set — export it before running"
         )
-    if not endpoint_id:
+    if require_api and not endpoint_id:
         raise RuntimeError("endpoint id is not set")
     if shutil.which("ffmpeg") is None:
         raise RuntimeError(
@@ -506,7 +515,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             _print(json.dumps(envelope, indent=2))
         return 0
 
-    preflight_checks(api_key, endpoint_id, AMBIENT_OUT_DIR)
+    # Stitch-only is offline (ffmpeg-only), doesn't need the API key.
+    preflight_checks(
+        api_key, endpoint_id, AMBIENT_OUT_DIR,
+        require_api=not args.stitch_only,
+    )
     run_dir.mkdir(parents=True, exist_ok=True)
     seg_paths = segment_paths_for(run_dir)
 
