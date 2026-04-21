@@ -93,7 +93,14 @@ def build_segment_prompt(segment_num: int) -> str:
 
 
 def build_payload(segment_num: int, duration: int, seed: int) -> dict:
-    """Build the RunPod /runsync `input` payload for one segment."""
+    """Build the RunPod /run `input` payload for one segment.
+
+    Uses MP3 per-segment (not FLAC) to stay under RunPod's worker-upload
+    size cap on /job-done: a 420s FLAC is ~55 MB base64 and 502s, while
+    MP3 at ACE-Step's typical bitrate is ~4x smaller and fits comfortably.
+    For Eno-style ambient (no transients) MP3 is perceptually transparent.
+    Final stitched output remains FLAC — ffmpeg re-encodes during stitch.
+    """
     return {
         "task_type": "text2music",
         "prompt": build_segment_prompt(segment_num),
@@ -102,7 +109,7 @@ def build_payload(segment_num: int, duration: int, seed: int) -> dict:
         "duration": duration,
         "seed": seed,
         "batch_size": 1,
-        "audio_format": "flac",
+        "audio_format": "mp3",
         "thinking": False,
         **PRESET,
     }
@@ -279,11 +286,12 @@ def run_segment(
 # ---------------------------------------------------------------------------
 # FLAC save from RunPod output
 # ---------------------------------------------------------------------------
-def save_flac_from_output(output: dict, path: Path) -> None:
+def save_audio_from_output(output: dict, path: Path) -> None:
     """Decode the response's audio_base64 and write it to `path` as raw bytes.
 
-    Does NOT transcode — the endpoint was asked for audio_format="flac", so
-    the bytes are already FLAC.
+    Does NOT transcode — the caller asked the endpoint for a specific
+    audio_format (currently "mp3" per build_payload) and the bytes are
+    already in that format. File extension on `path` should match.
     """
     b64 = output.get("audio_base64", "")
     if not b64:
@@ -432,8 +440,12 @@ def resolve_run_dir(base: Path, run_id: Optional[str]) -> Path:
 
 
 def segment_paths_for(run_dir: Path) -> list[Path]:
-    """Return the 7 FLAC segment paths inside run_dir (numbered 01..07)."""
-    return [Path(run_dir) / f"segment_{i:02d}.flac"
+    """Return the 7 MP3 segment paths inside run_dir (numbered 01..07).
+
+    MP3, not FLAC — see build_payload docstring. ffmpeg acrossfade works
+    identically on MP3 inputs and re-encodes to FLAC for the final stitch.
+    """
+    return [Path(run_dir) / f"segment_{i:02d}.mp3"
             for i in range(1, SEGMENT_COUNT + 1)]
 
 
@@ -544,7 +556,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         output = result.get("output", {})
         actual_seed = int(output.get("seed", seed))
         seeds_actual[i - 1] = actual_seed
-        save_flac_from_output(output, seg_path)
+        save_audio_from_output(output, seg_path)
         write_sidecar(sidecar_path, {
             "segment_num": i,
             "phase": SEGMENT_DESCRIPTORS[i - 1]["phase"],

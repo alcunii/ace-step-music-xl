@@ -108,9 +108,11 @@ class TestPayloadBuilder:
         m = _load()
         assert m.build_payload(1, 420, -1)["thinking"] is False
 
-    def test_payload_audio_format_is_flac(self):
+    def test_payload_audio_format_is_mp3(self):
         m = _load()
-        assert m.build_payload(1, 420, -1)["audio_format"] == "flac"
+        # MP3 per-segment — FLAC exceeds RunPod /job-done size cap for 300s+
+        # durations. Final stitched output is still FLAC (ffmpeg re-encodes).
+        assert m.build_payload(1, 420, -1)["audio_format"] == "mp3"
 
     def test_payload_batch_size_is_one(self):
         m = _load()
@@ -336,33 +338,33 @@ class TestRunSegment:
                 )
 
 
-class TestSaveFlac:
+class TestSaveAudio:
     def test_save_writes_decoded_bytes(self, tmp_path):
         m = _load()
-        raw = b"notactualflacbutfine"
+        raw = b"notactualmp3butfine"
         output = {"audio_base64": base64.b64encode(raw).decode()}
-        path = tmp_path / "s01.flac"
-        m.save_flac_from_output(output, path)
+        path = tmp_path / "s01.mp3"
+        m.save_audio_from_output(output, path)
         assert path.read_bytes() == raw
 
     def test_save_creates_parent_dir(self, tmp_path):
         m = _load()
         output = {"audio_base64": base64.b64encode(b"x").decode()}
-        path = tmp_path / "deep" / "nested" / "s.flac"
-        m.save_flac_from_output(output, path)
+        path = tmp_path / "deep" / "nested" / "s.mp3"
+        m.save_audio_from_output(output, path)
         assert path.exists()
 
     def test_save_raises_on_missing_audio(self, tmp_path):
         m = _load()
         import pytest
         with pytest.raises(ValueError, match="audio_base64"):
-            m.save_flac_from_output({}, tmp_path / "x.flac")
+            m.save_audio_from_output({}, tmp_path / "x.mp3")
 
     def test_save_raises_on_empty_audio(self, tmp_path):
         m = _load()
         import pytest
         with pytest.raises(ValueError, match="empty"):
-            m.save_flac_from_output({"audio_base64": ""}, tmp_path / "x.flac")
+            m.save_audio_from_output({"audio_base64": ""}, tmp_path / "x.mp3")
 
 
 class TestFFmpegCommand:
@@ -510,8 +512,8 @@ class TestRunDir:
         m = _load()
         paths = m.segment_paths_for(tmp_path)
         assert len(paths) == 7
-        assert paths[0].name == "segment_01.flac"
-        assert paths[6].name == "segment_07.flac"
+        assert paths[0].name == "segment_01.mp3"
+        assert paths[6].name == "segment_07.mp3"
 
     def test_load_pinned_seeds_from_prior_run(self, tmp_path):
         m = _load()
@@ -570,7 +572,7 @@ class TestMain:
         # 7 payload dumps must appear
         assert out.count('"task_type": "text2music"') == 7
         # No FLAC should have been written
-        assert not any((tmp_path / "dry1").glob("segment_*.flac"))
+        assert not any((tmp_path / "dry1").glob("segment_*.mp3"))
 
     def test_stitch_only_runs_ffmpeg(self, tmp_path, monkeypatch):
         m = _load()
@@ -618,7 +620,7 @@ class TestMain:
         assert exit_code == 0
         run_dir = tmp_path / "full1"
         for i in range(1, 8):
-            assert (run_dir / f"segment_{i:02d}.flac").exists()
+            assert (run_dir / f"segment_{i:02d}.mp3").exists()
             assert (run_dir / f"segment_{i:02d}.json").exists()
         assert (run_dir / "manifest.json").exists()
         assert (run_dir / "eno_45min_final.flac").exists()
@@ -635,7 +637,7 @@ class TestMain:
         run_dir.mkdir()
         # Pre-create segments 1..5 so only 6 + 7 need generating.
         for i in range(1, 6):
-            (run_dir / f"segment_{i:02d}.flac").write_bytes(b"pre")
+            (run_dir / f"segment_{i:02d}.mp3").write_bytes(b"pre")
             m.write_sidecar(run_dir / f"segment_{i:02d}.json", {"seed": 100 + i})
         def fake_run(cmd, check, capture_output):
             Path(cmd[-1]).write_bytes(b"final")
