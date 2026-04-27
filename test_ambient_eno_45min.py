@@ -315,7 +315,7 @@ class TestRunSegment:
             return {"id": "j1", "status": "COMPLETED",
                     "output": {"audio_base64": "AAA", "duration": 420}}
 
-        monkeypatch.setattr(m, "submit_job", submit_with_failures)
+        monkeypatch.setattr("loopvid.runpod_client.submit_job", submit_with_failures)
         result = m.run_segment(
             endpoint_id="EP", api_key="key", segment_num=1,
             duration=420, seed=-1, poll_interval=0, retry_sleep=0,

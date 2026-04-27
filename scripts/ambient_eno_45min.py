@@ -29,6 +29,16 @@ from typing import Optional
 
 import requests
 
+from loopvid.runpod_client import (
+    submit_job,
+    poll_job,
+    run_segment as _run_segment_shared,
+    REQUEST_TIMEOUT_SEC,
+    POLL_INTERVAL_SEC,
+    MAX_TRANSIENT_404,
+    MAX_SEGMENT_RETRIES,
+)
+
 # ---------------------------------------------------------------------------
 # Constants — locked sonic palette, per-segment evolution, and the official
 # ACE-Step 1.5 XL-base "High-Quality Generation" preset.
@@ -69,11 +79,6 @@ SEGMENT_DURATION_SEC = 420
 CROSSFADE_SEC = 30
 DEFAULT_ENDPOINT_ID = "nwqnd0duxc6o38"
 AMBIENT_OUT_DIR = Path(__file__).resolve().parent.parent / "out" / "ambient"
-
-POLL_INTERVAL_SEC = 5
-REQUEST_TIMEOUT_SEC = 1800
-MAX_TRANSIENT_404 = 6
-MAX_SEGMENT_RETRIES = 3
 
 
 # ---------------------------------------------------------------------------
@@ -155,84 +160,10 @@ def write_manifest(
 
 
 # ---------------------------------------------------------------------------
-# RunPod client — submit a job, poll to completion with 404 tolerance.
-# Mirrors the pattern in scripts/bruno_mars_style_midnight_gold.py.
-# ---------------------------------------------------------------------------
-def submit_job(endpoint_id: str, api_key: str, payload: dict) -> dict:
-    """POST the payload to /v2/{ep}/run (async). Returns the full response body
-    — typically {"id": "...", "status": "IN_QUEUE"}.
-
-    We use the async /run endpoint, NOT /runsync, because our audio payload
-    regularly exceeds RunPod's synchronous inline-response size cap (~10–20
-    MB). A 360s FLAC is ~47 MB base64 — the /runsync worker successfully
-    generates the audio but RunPod's gateway 502s when the worker tries to
-    ship the result back. /run stores the result server-side and our caller
-    polls /status/{id} to retrieve it, which has no comparable size limit.
-
-    The returned body occasionally carries status=COMPLETED directly for very
-    short/cached jobs; callers should handle that case without requiring a
-    poll round-trip.
-    """
-    url = f"https://api.runpod.ai/v2/{endpoint_id}/run"
-    resp = requests.post(
-        url,
-        json=payload,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        timeout=REQUEST_TIMEOUT_SEC,
-    )
-    resp.raise_for_status()
-    return resp.json()
-
-
-def poll_job(
-    endpoint_id: str,
-    api_key: str,
-    job_id: str,
-    *,
-    poll_interval: int = POLL_INTERVAL_SEC,
-) -> dict:
-    """Poll /v2/{ep}/status/{job_id} until COMPLETED, FAILED, CANCELLED, or
-    TIMED_OUT. Tolerates up to MAX_TRANSIENT_404 consecutive 404s (the RunPod
-    status endpoint is briefly eventually-consistent after submission).
-
-    Returns the full status JSON on COMPLETED. Raises RuntimeError on terminal
-    failure or if transient 404 count is exceeded.
-    """
-    url = f"https://api.runpod.ai/v2/{endpoint_id}/status/{job_id}"
-    headers = {"Authorization": f"Bearer {api_key}"}
-    consecutive_404s = 0
-    while True:
-        resp = requests.get(url, headers=headers, timeout=30)
-        if resp.status_code == 404:
-            consecutive_404s += 1
-            if consecutive_404s > MAX_TRANSIENT_404:
-                raise RuntimeError(
-                    f"Too many consecutive 404s polling job {job_id}"
-                )
-            if poll_interval > 0:
-                time.sleep(poll_interval)
-            continue
-        resp.raise_for_status()
-        consecutive_404s = 0
-        body = resp.json()
-        status = body.get("status", "")
-        if status == "COMPLETED":
-            return body
-        if status in ("FAILED", "CANCELLED", "TIMED_OUT"):
-            raise RuntimeError(
-                f"Job {job_id} terminal status {status}: "
-                f"{body.get('error', body)}"
-            )
-        # IN_QUEUE / IN_PROGRESS — keep polling
-        if poll_interval > 0:
-            time.sleep(poll_interval)
-
-
-# ---------------------------------------------------------------------------
-# Whole-segment retry wrapper
+# RunPod client — submit_job, poll_job, and run_segment now live in
+# loopvid.runpod_client (imported at the top of the file). The local
+# `run_segment` below is a thin wrapper that builds the segment payload and
+# delegates to the shared retry/polling implementation.
 # ---------------------------------------------------------------------------
 def run_segment(
     *,
@@ -244,42 +175,16 @@ def run_segment(
     poll_interval: int = POLL_INTERVAL_SEC,
     retry_sleep: int = 5,
 ) -> dict:
-    """Submit one segment and poll to completion, with up to
-    MAX_SEGMENT_RETRIES whole-segment retries on transient failure.
-
-    Returns the full RunPod status JSON on success. Raises RuntimeError after
-    all retries exhausted.
-    """
+    """Backwards-compatible wrapper — builds the segment payload, then delegates
+    to the shared runpod_client.run_segment."""
     payload = {"input": build_payload(segment_num, duration, seed)}
-    last_err: Optional[BaseException] = None
-    for attempt in range(1, MAX_SEGMENT_RETRIES + 1):
-        try:
-            body = submit_job(endpoint_id, api_key, payload)
-            status = body.get("status", "")
-            if status == "COMPLETED":
-                # /runsync already finished synchronously — body has output.
-                return body
-            if status in ("FAILED", "CANCELLED", "TIMED_OUT"):
-                raise RuntimeError(
-                    f"segment {segment_num} submit returned status={status}: "
-                    f"{body.get('error', body)}"
-                )
-            job_id = body.get("id", "")
-            if not job_id:
-                raise RuntimeError(
-                    f"segment {segment_num} submit response missing id: {body}"
-                )
-            return poll_job(endpoint_id, api_key, job_id,
-                            poll_interval=poll_interval)
-        except (requests.RequestException, RuntimeError) as e:
-            last_err = e
-            if attempt < MAX_SEGMENT_RETRIES:
-                if retry_sleep > 0:
-                    time.sleep(retry_sleep)
-                continue
-    raise RuntimeError(
-        f"segment {segment_num} failed after {MAX_SEGMENT_RETRIES} attempts: "
-        f"{last_err}"
+    return _run_segment_shared(
+        endpoint_id=endpoint_id,
+        api_key=api_key,
+        payload=payload,
+        label=f"segment {segment_num}",
+        poll_interval=poll_interval,
+        retry_sleep=retry_sleep,
     )
 
 
