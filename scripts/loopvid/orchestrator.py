@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -141,7 +142,14 @@ def run_orchestrator(cfg: OrchestratorConfig) -> Path:
             on_segment_done=lambda i, p: _print(f"  ✓ seg {i} ({p.stat().st_size:,} B)"),
         )
         if not master_path.exists() and seg_paths:
-            stitch_segments(seg_paths, master_path)
+            if len(seg_paths) == 1:
+                # Single segment — no crossfade needed, atomic copy is enough.
+                import shutil
+                tmp = master_path.with_suffix(master_path.suffix + ".tmp")
+                shutil.copy(seg_paths[0], tmp)
+                os.replace(tmp, master_path)
+            else:
+                stitch_segments(seg_paths, master_path)
         mark_step_done(cfg.run_dir, "music", extra={"master_committed": True})
         _print("✓ music master committed")
     else:
