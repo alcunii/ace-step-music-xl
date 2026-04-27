@@ -26,26 +26,17 @@ def check_ffmpeg_available() -> None:
 
 
 def _get_endpoint(endpoint_id: str, api_key: str) -> dict:
-    """Fetch endpoint metadata via RunPod GraphQL. Wrapped for test mocking."""
-    url = "https://api.runpod.io/graphql"
-    query = """query($id: String!) {
-        endpoint(id: $id) {
-            id
-            name
-            workersMax
-        }
-    }"""
-    resp = requests.post(
+    """Fetch endpoint metadata via RunPod REST API. Wrapped for test mocking."""
+    url = f"https://rest.runpod.io/v1/endpoints/{endpoint_id}"
+    resp = requests.get(
         url,
-        json={"query": query, "variables": {"id": endpoint_id}},
         headers={"Authorization": f"Bearer {api_key}"},
         timeout=30,
     )
-    resp.raise_for_status()
-    data = resp.json().get("data", {}).get("endpoint")
-    if not data:
+    if resp.status_code == 404:
         raise PreflightError(f"Endpoint {endpoint_id} not found or inaccessible")
-    return data
+    resp.raise_for_status()
+    return resp.json()
 
 
 def check_endpoint_workers(endpoint_id: str, api_key: str) -> None:
