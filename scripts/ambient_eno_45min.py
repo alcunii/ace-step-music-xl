@@ -38,6 +38,7 @@ from loopvid.runpod_client import (
     MAX_TRANSIENT_404,
     MAX_SEGMENT_RETRIES,
 )
+from loopvid.constants import ACE_STEP_PRESET as PRESET
 
 # ---------------------------------------------------------------------------
 # Constants — locked sonic palette, per-segment evolution, and the official
@@ -63,16 +64,6 @@ SEGMENT_DESCRIPTORS = [
     {"phase": "Exhale-2", "descriptors": "sparser piano, more air, upper register glow"},
     {"phase": "Dissolve", "descriptors": "dissolving pads, long diminuendo, fade into silence"},
 ]
-
-PRESET = {
-    "inference_steps": 64,
-    "guidance_scale": 8.0,
-    "shift": 3.0,
-    "use_adg": True,
-    "cfg_interval_start": 0.0,
-    "cfg_interval_end": 1.0,
-    "infer_method": "ode",
-}
 
 SEGMENT_COUNT = 7
 SEGMENT_DURATION_SEC = 420
