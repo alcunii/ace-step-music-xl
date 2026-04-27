@@ -7,3 +7,4 @@ dist/
 build/
 .coverage
 out/
+.superpowers/
