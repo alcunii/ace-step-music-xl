@@ -3,6 +3,7 @@ from scripts.loopvid.cost import (
     cost_breakdown_lines,
     BudgetExceededError,
     enforce_budget,
+    segments_for_duration,
 )
 
 
@@ -36,3 +37,21 @@ def test_enforce_budget_over_max_raises():
     import pytest
     with pytest.raises(BudgetExceededError, match="\\$5"):
         enforce_budget(estimated=6.00, max_cost=5.00)
+
+
+def test_segments_for_duration_60min_yields_11():
+    assert segments_for_duration(3600) == 11
+
+
+def test_segments_for_duration_5min_yields_1():
+    assert segments_for_duration(300) == 1
+
+
+def test_segments_for_duration_below_threshold_rounds_up():
+    assert segments_for_duration(400) == 2   # 400/360 rounded up
+    assert segments_for_duration(720) == 2   # 720/360 = 2.0 exactly
+
+
+def test_segments_for_duration_minimum_is_one():
+    assert segments_for_duration(60) == 1
+    assert segments_for_duration(1) == 1

@@ -9,7 +9,7 @@ from typing import Optional
 from scripts.loopvid.constants import (
     SEGMENT_COUNT_60MIN, SEGMENT_DURATION_SEC,
 )
-from scripts.loopvid.cost import estimate_run_cost, cost_breakdown_lines, enforce_budget
+from scripts.loopvid.cost import estimate_run_cost, cost_breakdown_lines, enforce_budget, segments_for_duration
 from scripts.loopvid.image_pipeline import generate_still, build_seedream_prompt
 from scripts.loopvid.llm_planner import plan
 from scripts.loopvid.loop_build import concat_clips_with_xfades, add_loop_seam_fade
@@ -127,12 +127,13 @@ def run_orchestrator(cfg: OrchestratorConfig) -> Path:
     master_path = music_dir / "master.mp3"
     if _should_run("music", cfg, m.steps["music"]["status"]):
         mark_step_in_progress(cfg.run_dir, "music")
-        _print(f"▸ music ({SEGMENT_COUNT_60MIN} segments × {SEGMENT_DURATION_SEC}s)")
+        n_segments = segments_for_duration(cfg.duration_sec)
+        _print(f"▸ music ({n_segments} segments × {SEGMENT_DURATION_SEC}s)")
         prompts = [
             f"{plan_obj.music_palette}, {seg['descriptors']}"
-            for seg in plan_obj.music_segment_descriptors
+            for seg in plan_obj.music_segment_descriptors[:n_segments]
         ]
-        seeds = [stable_clip_seed(cfg.run_id, i) for i in range(1, SEGMENT_COUNT_60MIN + 1)]
+        seeds = [stable_clip_seed(cfg.run_id, i) for i in range(1, n_segments + 1)]
         seg_paths = run_music_pipeline(
             prompts=prompts, duration_sec=SEGMENT_DURATION_SEC, seeds=seeds,
             out_dir=music_dir,

@@ -30,9 +30,19 @@ class BudgetExceededError(RuntimeError):
     pass
 
 
+def segments_for_duration(duration_sec: int) -> int:
+    """How many ACE-Step segments do we need to cover duration_sec seconds?
+
+    For >= 3000s, hardcoded to SEGMENT_COUNT_60MIN (11). For shorter durations,
+    rounds up duration / SEGMENT_DURATION_SEC. Always at least 1.
+    """
+    if duration_sec >= 3000:
+        return SEGMENT_COUNT_60MIN
+    return max(1, (duration_sec + SEGMENT_DURATION_SEC - 1) // SEGMENT_DURATION_SEC)
+
+
 def _step_costs(duration_sec: int) -> dict:
-    music_segments = max(1, SEGMENT_COUNT_60MIN if duration_sec >= 3000 else
-                          (duration_sec + SEGMENT_DURATION_SEC - 1) // SEGMENT_DURATION_SEC)
+    music_segments = segments_for_duration(duration_sec)
     music_inference_sec = music_segments * SEGMENT_DURATION_SEC * ACE_STEP_INFERENCE_SEC_PER_OUTPUT_SEC
     music_cost = music_inference_sec * RTX_4090_PER_SEC
 
@@ -58,10 +68,11 @@ def estimate_run_cost(duration_sec: int = 3600, skip: Iterable[str] = ()) -> flo
 def cost_breakdown_lines(duration_sec: int = 3600, skip: Iterable[str] = ()) -> list[str]:
     skipset = set(skip)
     costs = _step_costs(duration_sec)
+    n_segments = segments_for_duration(duration_sec)
     labels = {
         "plan":  "LLM (Gemini 3 Flash)",
         "image": "Image (Seedream 4.5)",
-        "music": f"Music (ACE-Step, {SEGMENT_COUNT_60MIN} segments)",
+        "music": f"Music (ACE-Step, {n_segments} segments)",
         "video": f"Video (LTX, {CLIP_COUNT} clips)",
     }
     out = []
