@@ -71,3 +71,55 @@ Standalone client-side orchestrators for generation patterns beyond a single
 ## Environment variables
 
 See `.env.example`.
+
+## Loop music video generator
+
+`scripts/loop_music_video.py` produces a 1-hour 1280×704 looping music video by
+composing OpenRouter (Gemini 3 Flash), ACE-Step XL serverless, and LTX-2.3
+ComfyUI serverless.
+
+### Quick start
+
+```bash
+# Set credentials
+export RUNPOD_API_KEY=...
+export OPENROUTER_API_KEY=...
+export REPLICATE_API_TOKEN=...
+
+# Default: 60-min ambient run
+python3 scripts/loop_music_video.py --genre ambient
+
+# Specific genre + mood
+python3 scripts/loop_music_video.py --genre lofi --mood "rainy autumn evening, cozy"
+
+# Dry run — show plan + cost, no API calls
+python3 scripts/loop_music_video.py --genre jazz --dry-run --yes
+
+# Resume a failed run
+python3 scripts/loop_music_video.py --resume <run-id>
+
+# Rollback (forensic — preserves everything in <run-id>.failed-<ts>/)
+python3 scripts/loop_music_video.py --rollback <run-id>
+
+# Rollback preserving expensive intermediates
+python3 scripts/loop_music_video.py --rollback <run-id> --keep music
+python3 scripts/loop_music_video.py --rollback <run-id> --keep music,image
+```
+
+### Cost guard
+
+`--max-cost <USD>` aborts the run before any paid call if the estimate exceeds
+the budget. Default behavior (no `--max-cost`) prompts for confirmation with
+the cost breakdown.
+
+### Live smoke test (paid, ~$0.40, ~10 min wall)
+
+```bash
+python3 scripts/smoke/03_loop_music_video_5min.py
+```
+
+### Architecture
+
+See `docs/superpowers/specs/2026-04-27-loop-music-video-design.md` for the
+full design (LLM Planner contract, music/video pipelines, loop seam math,
+manifest state machine, rollback strategy).
