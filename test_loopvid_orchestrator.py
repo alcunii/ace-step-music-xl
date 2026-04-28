@@ -125,3 +125,50 @@ def test_orchestrator_config_has_new_optional_fields():
     assert cfg.extra_archetype_keys is None
     assert cfg.extra_motion_archetypes is None
     assert cfg.preset_plan_dict is None
+
+
+def test_preset_plan_dict_skips_llm(tmp_path, monkeypatch):
+    """When preset_plan_dict is set, orchestrator skips the LLM call and
+    writes the dict directly to plan.json."""
+    from scripts.loopvid import orchestrator as orch
+    llm_called = {"yes": False}
+    def fake_plan(**kwargs):
+        llm_called["yes"] = True
+        raise AssertionError("LLM should not be called when preset_plan_dict is set")
+    monkeypatch.setattr(orch, "plan", fake_plan)
+    # Stub everything after the plan step to short-circuit
+    monkeypatch.setattr(orch, "run_preflight", lambda **k: None)
+    monkeypatch.setattr(orch, "run_music_pipeline", lambda **k: [])
+    monkeypatch.setattr(orch, "generate_still", lambda **k: "stub-pred")
+    monkeypatch.setattr(orch, "run_video_pipeline", lambda **k: [])
+    monkeypatch.setattr(orch, "slice_audio_chunks", lambda *a, **k: [])
+    monkeypatch.setattr(orch, "concat_clips_with_xfades", lambda *a, **k: None)
+    monkeypatch.setattr(orch, "add_loop_seam_fade", lambda *a, **k: None)
+    monkeypatch.setattr(orch, "final_assembly", lambda *a, **k: None)
+
+    preset = {
+        "genre": "lofi", "mood": "",
+        "music_palette": "lofi in the style of Nujabes, instrumental, 75 bpm",
+        "music_segment_descriptors": [
+            {"phase": "settle", "descriptors": "soft intro"} for _ in range(11)
+        ],
+        "music_bpm": 75,
+        "seedream_scene": "scene", "seedream_style": "style",
+        "motion_prompts": ["p"] * 6,
+        "motion_archetype": "capybara_tea",
+        "image_archetype_key": "capybara_tea",
+    }
+    cfg = OrchestratorConfig(
+        run_id="r", run_dir=tmp_path / "r", genre="lofi", mood="", duration_sec=60,
+        ace_step_endpoint="a", ltx_endpoint="l",
+        runpod_api_key="k", openrouter_api_key="", replicate_api_token="t",
+        skip=("music", "image", "video", "loop_build", "mux"),
+        preset_plan_dict=preset,
+        extra_archetype_keys={"capybara_tea"},
+        extra_motion_archetypes={"capybara_tea"},
+    )
+    orch.run_orchestrator(cfg)
+    assert llm_called["yes"] is False
+    assert (tmp_path / "r" / "plan.json").exists()
+    saved = json.loads((tmp_path / "r" / "plan.json").read_text())
+    assert saved["music_palette"] == preset["music_palette"]

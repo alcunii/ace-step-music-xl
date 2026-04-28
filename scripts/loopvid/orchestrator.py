@@ -9,6 +9,7 @@ from typing import Optional
 
 from scripts.loopvid.constants import (
     SEGMENT_COUNT_60MIN, SEGMENT_DURATION_SEC,
+    SEEDREAM_HARD_CONSTRAINTS, LTX_NEGATIVE_PROMPT,
 )
 from scripts.loopvid.cost import estimate_run_cost, cost_breakdown_lines, enforce_budget, segments_for_duration
 from scripts.loopvid.image_pipeline import generate_still, build_seedream_prompt
@@ -102,31 +103,40 @@ def run_orchestrator(cfg: OrchestratorConfig) -> Path:
     # Step 1: plan
     if _should_run("plan", cfg, m.steps["plan"]["status"]):
         mark_step_in_progress(cfg.run_dir, "plan")
-        _print("▸ plan (LLM)")
-        plan_obj = plan(
-            genre=cfg.genre, mood=cfg.mood,
-            api_key=cfg.openrouter_api_key,
-            raw_response_path=str(cfg.run_dir / "plan_raw.json"),
-        )
-        plan_path.write_text(json.dumps({
-            "genre": plan_obj.genre,
-            "mood": plan_obj.mood,
-            "music_palette": plan_obj.music_palette,
-            "music_segment_descriptors": plan_obj.music_segment_descriptors,
-            "music_bpm": plan_obj.music_bpm,
-            "seedream_scene": plan_obj.seedream_scene,
-            "seedream_style": plan_obj.seedream_style,
-            "motion_prompts": plan_obj.motion_prompts,
-            "motion_archetype": plan_obj.motion_archetype,
-            "image_archetype_key": plan_obj.image_archetype_key,
-        }, indent=2, sort_keys=True))
+        if cfg.preset_plan_dict is not None:
+            _print("▸ plan (preset)")
+            plan_dict_to_save = cfg.preset_plan_dict
+        else:
+            _print("▸ plan (LLM)")
+            plan_obj = plan(
+                genre=cfg.genre, mood=cfg.mood,
+                api_key=cfg.openrouter_api_key,
+                raw_response_path=str(cfg.run_dir / "plan_raw.json"),
+            )
+            plan_dict_to_save = {
+                "genre": plan_obj.genre,
+                "mood": plan_obj.mood,
+                "music_palette": plan_obj.music_palette,
+                "music_segment_descriptors": plan_obj.music_segment_descriptors,
+                "music_bpm": plan_obj.music_bpm,
+                "seedream_scene": plan_obj.seedream_scene,
+                "seedream_style": plan_obj.seedream_style,
+                "motion_prompts": plan_obj.motion_prompts,
+                "motion_archetype": plan_obj.motion_archetype,
+                "image_archetype_key": plan_obj.image_archetype_key,
+            }
+        plan_path.write_text(json.dumps(plan_dict_to_save, indent=2, sort_keys=True))
         mark_step_done(cfg.run_dir, "plan")
         _print("✓ plan committed")
     else:
         _print("✓ plan (cached)")
 
     plan_dict = json.loads(plan_path.read_text())
-    plan_obj = validate_plan_dict(plan_dict)
+    plan_obj = validate_plan_dict(
+        plan_dict,
+        extra_archetype_keys=cfg.extra_archetype_keys,
+        extra_motion_archetypes=cfg.extra_motion_archetypes,
+    )
 
     # Step 2: music
     music_dir = cfg.run_dir / "music"
@@ -165,7 +175,10 @@ def run_orchestrator(cfg: OrchestratorConfig) -> Path:
     if _should_run("image", cfg, m.steps["image"]["status"]):
         mark_step_in_progress(cfg.run_dir, "image")
         _print("▸ image (Seedream)")
-        prompt_str = build_seedream_prompt(plan_obj.seedream_scene, plan_obj.seedream_style)
+        prompt_str = build_seedream_prompt(
+            plan_obj.seedream_scene, plan_obj.seedream_style,
+            constraints=cfg.seedream_constraints or SEEDREAM_HARD_CONSTRAINTS,
+        )
         pred_id = generate_still(
             prompt=prompt_str, api_token=cfg.replicate_api_token, out_path=still_path,
         )
@@ -189,6 +202,7 @@ def run_orchestrator(cfg: OrchestratorConfig) -> Path:
             out_dir=video_dir,
             endpoint_id=cfg.ltx_endpoint, api_key=cfg.runpod_api_key,
             on_clip_done=lambda i, p: _print(f"  ✓ clip {i}"),
+            negative_prompt=cfg.ltx_negative or LTX_NEGATIVE_PROMPT,
         )
         mark_step_done(cfg.run_dir, "video")
         _print("✓ video clips committed")
