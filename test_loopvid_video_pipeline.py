@@ -87,3 +87,18 @@ def test_stable_clip_seed_differs_between_clips():
 
 def test_stable_clip_seed_differs_between_runs():
     assert stable_clip_seed("run-1", 1) != stable_clip_seed("run-2", 1)
+
+
+def test_build_clip_payload_uses_custom_negative_when_given():
+    payload = build_clip_payload(
+        image_b64="img", audio_b64="aud", motion_prompt="p", seed=1,
+        negative_prompt="custom negative",
+    )
+    assert payload["input"]["negative_prompt"] == "custom negative"
+
+
+def test_build_clip_payload_default_negative_unchanged():
+    payload = build_clip_payload(
+        image_b64="img", audio_b64="aud", motion_prompt="p", seed=1,
+    )
+    assert payload["input"]["negative_prompt"] == LTX_NEGATIVE_PROMPT

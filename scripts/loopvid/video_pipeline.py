@@ -46,13 +46,14 @@ def slice_audio_chunks(
 
 def build_clip_payload(
     *, image_b64: str, audio_b64: str, motion_prompt: str, seed: int,
+    negative_prompt: str = LTX_NEGATIVE_PROMPT,
 ) -> dict:
     return {
         "input": {
             "image_base64": image_b64,
             "audio_base64": audio_b64,
             "prompt": motion_prompt,
-            "negative_prompt": LTX_NEGATIVE_PROMPT,
+            "negative_prompt": negative_prompt,
             "num_frames": CLIP_NUM_FRAMES,
             "fps": CLIP_FPS,
             "seed": seed,
@@ -86,6 +87,7 @@ def run_video_pipeline(
     endpoint_id: str,
     api_key: str,
     on_clip_done: Optional[Callable[[int, Path], None]] = None,
+    negative_prompt: str = LTX_NEGATIVE_PROMPT,
 ) -> list[Path]:
     """Submit one LTX call per clip, sequentially. Skips clips with existing
     canonical output. Returns list of clip_NN.mp4 paths in order."""
@@ -108,6 +110,7 @@ def run_video_pipeline(
             audio_b64=audio_b64,
             motion_prompt=motion_prompts[i - 1],
             seed=stable_clip_seed(run_id, i),
+            negative_prompt=negative_prompt,
         )
         body = run_segment(
             endpoint_id=endpoint_id, api_key=api_key, payload=payload,
