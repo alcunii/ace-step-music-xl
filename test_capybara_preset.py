@@ -202,3 +202,68 @@ def test_build_motion_prompts_micro_motion_elements_present():
     assert "ear" in prompts[2].lower()
     assert "blink" in prompts[3].lower()
     assert "tail" in prompts[4].lower()
+
+
+from scripts.loopvid.capybara_preset import build_plan_dict
+from scripts.loopvid.plan_schema import validate_plan_dict
+
+
+def test_build_plan_dict_validates_with_extra_archetype_keys():
+    s = CAPYBARA_SETTINGS[0]
+    d = build_plan_dict(s)
+    plan = validate_plan_dict(
+        d,
+        extra_archetype_keys={PRESET_SENTINEL_KEY},
+        extra_motion_archetypes={PRESET_SENTINEL_KEY},
+    )
+    assert plan.music_palette == CAPYBARA_MUSIC_PALETTE
+    assert plan.music_bpm == CAPYBARA_MUSIC_BPM
+    assert plan.image_archetype_key == PRESET_SENTINEL_KEY
+    assert plan.motion_archetype == PRESET_SENTINEL_KEY
+
+
+def test_build_plan_dict_works_for_all_settings():
+    for s in CAPYBARA_SETTINGS:
+        d = build_plan_dict(s)
+        validate_plan_dict(
+            d,
+            extra_archetype_keys={PRESET_SENTINEL_KEY},
+            extra_motion_archetypes={PRESET_SENTINEL_KEY},
+        )
+
+
+def test_build_plan_dict_seedream_scene_includes_all_three_setting_fields():
+    s = CAPYBARA_SETTINGS[0]
+    d = build_plan_dict(s)
+    assert s["scene"] in d["seedream_scene"]
+    assert s["lighting"] in d["seedream_scene"]
+    assert s["palette"] in d["seedream_scene"]
+
+
+def test_build_plan_dict_seedream_style_is_ghibli_anchor():
+    s = CAPYBARA_SETTINGS[0]
+    d = build_plan_dict(s)
+    assert d["seedream_style"] == CAPYBARA_SEEDREAM_STYLE
+
+
+def test_build_plan_dict_motion_prompts_six_with_loop_seam():
+    s = CAPYBARA_SETTINGS[0]
+    d = build_plan_dict(s)
+    assert len(d["motion_prompts"]) == 6
+    assert d["motion_prompts"][0] == d["motion_prompts"][5]
+
+
+def test_build_seedream_prompt_with_capybara_constraints_concatenates_all_parts():
+    """Smoke-test: the rendered Seedream prompt produced by the existing
+    build_seedream_prompt() with the capybara constraints contains scene,
+    style anchor, AND universal-block phrase from constraints."""
+    from scripts.loopvid.image_pipeline import build_seedream_prompt
+    s = CAPYBARA_SETTINGS[0]
+    d = build_plan_dict(s)
+    rendered = build_seedream_prompt(
+        d["seedream_scene"], d["seedream_style"],
+        constraints=CAPYBARA_SEEDREAM_CONSTRAINTS,
+    )
+    assert s["scene"] in rendered
+    assert "Ghibli" in rendered
+    assert "no human figures" in rendered.lower()

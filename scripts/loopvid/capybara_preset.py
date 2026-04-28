@@ -197,3 +197,21 @@ def build_motion_prompts(setting: dict) -> list[str]:
         f"Camera locked.",                                               # clip 5 — tail flick
         rest_state,  # clip 6 — rest (must equal clip 1)
     ]
+
+
+def build_plan_dict(setting: dict) -> dict:
+    """Assemble a plan dict that satisfies plan_schema.validate_plan_dict
+    when called with extra_archetype_keys={PRESET_SENTINEL_KEY} and
+    extra_motion_archetypes={PRESET_SENTINEL_KEY}."""
+    return {
+        "genre": CAPYBARA_GENRE,
+        "mood": "cozy capybara tea",
+        "music_palette": CAPYBARA_MUSIC_PALETTE,
+        "music_segment_descriptors": CAPYBARA_SEGMENT_DESCRIPTORS,
+        "music_bpm": CAPYBARA_MUSIC_BPM,
+        "seedream_scene": f"{setting['scene']}. {setting['lighting']}. {setting['palette']}",
+        "seedream_style": CAPYBARA_SEEDREAM_STYLE,
+        "motion_prompts": build_motion_prompts(setting),
+        "motion_archetype": PRESET_SENTINEL_KEY,
+        "image_archetype_key": PRESET_SENTINEL_KEY,
+    }
