@@ -18,8 +18,8 @@ POLL_TIMEOUT_SEC = 600
 DOWNLOAD_TIMEOUT_SEC = 60
 
 
-def build_seedream_prompt(scene: str, style: str) -> str:
-    return f"{scene}. {style}. {SEEDREAM_HARD_CONSTRAINTS}"
+def build_seedream_prompt(scene: str, style: str, *, constraints: str = SEEDREAM_HARD_CONSTRAINTS) -> str:
+    return f"{scene}. {style}. {constraints}"
 
 
 def generate_still(

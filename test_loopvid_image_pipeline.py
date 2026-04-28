@@ -86,3 +86,17 @@ def test_generate_still_raises_on_failed(tmp_path):
 
     with pytest.raises(RuntimeError, match="OOM"):
         generate_still(prompt="x", api_token="t", out_path=tmp_path / "s.png", poll_interval=0)
+
+
+def test_build_seedream_prompt_uses_custom_constraints_when_given():
+    custom = "Studio Ghibli watercolor anime style, no chibi exaggerations"
+    p = build_seedream_prompt("scene", "style", constraints=custom)
+    assert "scene" in p
+    assert "style" in p
+    assert custom in p
+    assert SEEDREAM_HARD_CONSTRAINTS not in p
+
+
+def test_build_seedream_prompt_default_constraints_unchanged():
+    p = build_seedream_prompt("scene", "style")
+    assert SEEDREAM_HARD_CONSTRAINTS in p
