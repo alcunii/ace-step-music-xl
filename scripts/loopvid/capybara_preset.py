@@ -165,3 +165,35 @@ def get_setting_by_key(key: str) -> dict:
     raise ValueError(
         f"unknown setting key: {key!r}. Valid keys: {valid}"
     )
+
+
+def build_motion_prompts(setting: dict) -> list[str]:
+    """6 motion-prompt strings. Tiny-arc: clip 1 and clip 6 are the rest
+    state (string-equal for invisible loop seam); clips 2-5 each add one
+    distinct micro-motion element."""
+    base = (
+        f"{setting['scene']}. {setting['lighting']}. {setting['palette']}. "
+        f"Studio Ghibli soft watercolor anime style. "
+        f"Ambient micro-motion only:"
+    )
+    rest_state = (
+        f"{base} thin wisps of warm steam rising slowly from the teacup, "
+        f"the capybara's chest barely rises and falls. "
+        f"Camera locked. Nothing else moves."
+    )
+    return [
+        rest_state,  # clip 1 — rest (loop seam)
+        f"{base} thin wisps of warm steam, capybara breathing softly, "
+        f"a single leaf drifts downward slowly at the edge of frame. "
+        f"Camera locked.",                                               # clip 2 — leaf drift
+        f"{base} thin wisps of warm steam, capybara breathing softly, "
+        f"one slow ear twitch, a leaf settles onto the ground. "
+        f"Camera locked.",                                               # clip 3 — ear twitch
+        f"{base} thin wisps of warm steam, capybara breathing softly, "
+        f"one slow eye blink, faint dust motes drift through a sunbeam. "
+        f"Camera locked.",                                               # clip 4 — eye blink
+        f"{base} thin wisps of warm steam, capybara breathing softly, "
+        f"one slow soft tail flick, the light shifts gently. "
+        f"Camera locked.",                                               # clip 5 — tail flick
+        rest_state,  # clip 6 — rest (must equal clip 1)
+    ]

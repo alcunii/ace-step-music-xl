@@ -158,3 +158,47 @@ def test_get_setting_by_key_unknown_raises_with_valid_keys_listed():
     assert "not_a_real_key" in msg
     # Error must list at least one known valid key for discoverability
     assert "forest_hot_spring" in msg
+
+
+from scripts.loopvid.capybara_preset import build_motion_prompts
+
+
+def test_build_motion_prompts_returns_six_strings():
+    s = CAPYBARA_SETTINGS[0]
+    prompts = build_motion_prompts(s)
+    assert len(prompts) == 6
+    assert all(isinstance(p, str) for p in prompts)
+
+
+def test_build_motion_prompts_loop_seam_invariant():
+    """Clip 1 and clip 6 must be string-equal so the loop seam is invisible."""
+    for s in CAPYBARA_SETTINGS:
+        prompts = build_motion_prompts(s)
+        assert prompts[0] == prompts[5], f"seam broken for {s['key']}"
+
+
+def test_build_motion_prompts_share_scene_prefix():
+    s = CAPYBARA_SETTINGS[0]
+    prompts = build_motion_prompts(s)
+    for i, p in enumerate(prompts):
+        assert s["scene"] in p, f"clip {i} missing scene"
+        assert "Ghibli" in p, f"clip {i} missing style anchor"
+        assert "Camera locked" in p, f"clip {i} missing camera-lock"
+
+
+def test_build_motion_prompts_each_clip_distinct_except_seam():
+    s = CAPYBARA_SETTINGS[0]
+    prompts = build_motion_prompts(s)
+    # clip 1 == clip 6 (seam); clips 2-5 must all be different from each other AND from rest
+    assert len(set(prompts[1:5])) == 4, "clips 2-5 must each be distinct"
+    assert prompts[0] not in prompts[1:5], "rest state must differ from active clips"
+
+
+def test_build_motion_prompts_micro_motion_elements_present():
+    s = CAPYBARA_SETTINGS[0]
+    prompts = build_motion_prompts(s)
+    # Each non-seam clip adds exactly one named micro-motion
+    assert "leaf" in prompts[1].lower()
+    assert "ear" in prompts[2].lower()
+    assert "blink" in prompts[3].lower()
+    assert "tail" in prompts[4].lower()
