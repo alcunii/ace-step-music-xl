@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from scripts.loopvid.constants import GENRE_ARCHETYPES, SEGMENT_COUNT_60MIN, CLIP_COUNT
+from scripts.loopvid.constants import (
+    GENRE_ARCHETYPES, SEGMENT_COUNT_60MIN, CLIP_COUNT,
+    MUSIC_PALETTE_MAX_CHARS, MUSIC_SEGMENT_DESCRIPTOR_MAX_CHARS,
+)
 
 ALLOWED_MOTION_ARCHETYPES = {"rain", "candle", "mist", "smoke", "dust", "snow"}
 
@@ -40,7 +43,12 @@ REQUIRED_FIELDS = {
 }
 
 
-def validate_plan_dict(d: dict) -> Plan:
+def validate_plan_dict(
+    d: dict,
+    *,
+    extra_archetype_keys: set[str] | None = None,
+    extra_motion_archetypes: set[str] | None = None,
+) -> Plan:
     for name, expected_type in REQUIRED_FIELDS.items():
         if name not in d:
             raise PlanSchemaError(f"missing required field: {name}")
@@ -48,6 +56,13 @@ def validate_plan_dict(d: dict) -> Plan:
             raise PlanSchemaError(
                 f"field {name} must be {expected_type.__name__}, got {type(d[name]).__name__}"
             )
+
+    if len(d["music_palette"]) > MUSIC_PALETTE_MAX_CHARS:
+        raise PlanSchemaError(
+            f"music_palette must be ≤ {MUSIC_PALETTE_MAX_CHARS} chars "
+            f"(got {len(d['music_palette'])}). Single-anchor format required: "
+            f"'{{genre}} in the style of {{one anchor}}, instrumental, {{bpm}} bpm'"
+        )
 
     if len(d["music_segment_descriptors"]) != SEGMENT_COUNT_60MIN:
         raise PlanSchemaError(
@@ -59,6 +74,12 @@ def validate_plan_dict(d: dict) -> Plan:
             raise PlanSchemaError(
                 f"music_segment_descriptors[{i}] must have 'phase' and 'descriptors' keys"
             )
+        if len(seg["descriptors"]) > MUSIC_SEGMENT_DESCRIPTOR_MAX_CHARS:
+            raise PlanSchemaError(
+                f"music_segment_descriptors[{i}].descriptors must be "
+                f"≤ {MUSIC_SEGMENT_DESCRIPTOR_MAX_CHARS} chars (got {len(seg['descriptors'])}). "
+                f"Use one short phase phrase, not a stack of adjectives."
+            )
 
     if len(d["motion_prompts"]) != CLIP_COUNT:
         raise PlanSchemaError(
@@ -66,16 +87,18 @@ def validate_plan_dict(d: dict) -> Plan:
             f"got {len(d['motion_prompts'])}"
         )
 
-    if d["image_archetype_key"] not in GENRE_ARCHETYPES:
+    allowed_image = set(GENRE_ARCHETYPES.keys()) | (extra_archetype_keys or set())
+    if d["image_archetype_key"] not in allowed_image:
         raise PlanSchemaError(
             f"image_archetype_key '{d['image_archetype_key']}' not in allowed set "
-            f"{sorted(GENRE_ARCHETYPES.keys())}"
+            f"{sorted(allowed_image)}"
         )
 
-    if d["motion_archetype"] not in ALLOWED_MOTION_ARCHETYPES:
+    allowed_motion = ALLOWED_MOTION_ARCHETYPES | (extra_motion_archetypes or set())
+    if d["motion_archetype"] not in allowed_motion:
         raise PlanSchemaError(
             f"motion_archetype '{d['motion_archetype']}' not in allowed set "
-            f"{sorted(ALLOWED_MOTION_ARCHETYPES)}"
+            f"{sorted(allowed_motion)}"
         )
 
     return Plan(

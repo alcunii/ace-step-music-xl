@@ -6,8 +6,7 @@ from scripts.loopvid.plan_schema import Plan, validate_plan_dict, PlanSchemaErro
 VALID = {
     "genre": "lofi",
     "mood": "rainy night",
-    "music_palette": "Lofi instrumental, 70 BPM, vinyl crackle, jazz piano, "
-                     "soft rim shot drums, warm tape saturation",
+    "music_palette": "lofi in the style of Nujabes, instrumental, 70 bpm",
     "music_segment_descriptors": [
         {"phase": f"phase-{i}", "descriptors": f"desc-{i}"} for i in range(1, 12)
     ],
@@ -63,3 +62,59 @@ def test_motion_archetype_must_be_from_allowed_set():
     bad = {**VALID, "motion_archetype": "unicorn"}
     with pytest.raises(PlanSchemaError, match="motion_archetype"):
         validate_plan_dict(bad)
+
+
+def test_music_palette_rejects_over_80_chars():
+    # Deliberately bloated palette in the old multi-descriptor style.
+    bloated = (
+        "Dusty vinyl crackle, warm analog Rhodes chords, muted sub-bass, "
+        "soft jazz-inflected guitar licks, bit-crushed drum machine"
+    )
+    assert len(bloated) > 80
+    bad = {**VALID, "music_palette": bloated}
+    with pytest.raises(PlanSchemaError, match="music_palette"):
+        validate_plan_dict(bad)
+
+
+def test_music_palette_accepts_single_anchor_at_cap():
+    # Boundary: exactly 80 chars must pass.
+    palette = "lofi in the style of Nujabes, instrumental, 70 bpm, mellow jazzy ambient feel"
+    assert len(palette) <= 80
+    ok = {**VALID, "music_palette": palette}
+    plan = validate_plan_dict(ok)
+    assert plan.music_palette == palette
+
+
+def test_segment_descriptor_rejects_over_30_chars():
+    bad_segs = list(VALID["music_segment_descriptors"])
+    bad_segs[0] = {
+        "phase": "settle",
+        "descriptors": "expanding guitar layers, increased filter resonance, lush",
+    }
+    bad = {**VALID, "music_segment_descriptors": bad_segs}
+    with pytest.raises(PlanSchemaError, match="descriptors"):
+        validate_plan_dict(bad)
+
+
+def test_extra_archetype_keys_accepts_custom_image_archetype():
+    custom = {**VALID, "image_archetype_key": "capybara_tea"}
+    plan = validate_plan_dict(custom, extra_archetype_keys={"capybara_tea"})
+    assert plan.image_archetype_key == "capybara_tea"
+
+
+def test_extra_archetype_keys_default_still_rejects_unknown():
+    custom = {**VALID, "image_archetype_key": "capybara_tea"}
+    with pytest.raises(PlanSchemaError, match="archetype"):
+        validate_plan_dict(custom)
+
+
+def test_extra_motion_archetypes_accepts_custom_motion_archetype():
+    custom = {**VALID, "motion_archetype": "capybara_tea"}
+    plan = validate_plan_dict(custom, extra_motion_archetypes={"capybara_tea"})
+    assert plan.motion_archetype == "capybara_tea"
+
+
+def test_extra_motion_archetypes_default_still_rejects_unknown():
+    custom = {**VALID, "motion_archetype": "capybara_tea"}
+    with pytest.raises(PlanSchemaError, match="motion_archetype"):
+        validate_plan_dict(custom)
