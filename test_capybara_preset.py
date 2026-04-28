@@ -123,3 +123,38 @@ def test_settings_each_scene_mentions_capybara_and_tea():
 
 def test_preset_sentinel_key():
     assert PRESET_SENTINEL_KEY == "capybara_tea"
+
+
+from scripts.loopvid.capybara_preset import pick_setting, get_setting_by_key
+
+
+def test_pick_setting_returns_a_setting_dict():
+    s = pick_setting()
+    assert s in CAPYBARA_SETTINGS
+
+
+def test_pick_setting_deterministic_with_seed():
+    a = pick_setting(seed=42)
+    b = pick_setting(seed=42)
+    assert a["key"] == b["key"]
+
+
+def test_pick_setting_different_seeds_eventually_diverge():
+    keys = {pick_setting(seed=i)["key"] for i in range(50)}
+    # With 10 settings and 50 different seeds, we expect to cover most/all keys
+    assert len(keys) >= 5
+
+
+def test_get_setting_by_key_returns_match():
+    s = get_setting_by_key("forest_hot_spring")
+    assert s["key"] == "forest_hot_spring"
+    assert "capybara" in s["scene"].lower()
+
+
+def test_get_setting_by_key_unknown_raises_with_valid_keys_listed():
+    with pytest.raises(ValueError) as exc:
+        get_setting_by_key("not_a_real_key")
+    msg = str(exc.value)
+    assert "not_a_real_key" in msg
+    # Error must list at least one known valid key for discoverability
+    assert "forest_hot_spring" in msg

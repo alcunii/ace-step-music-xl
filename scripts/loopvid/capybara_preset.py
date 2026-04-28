@@ -8,6 +8,8 @@ Spec: docs/superpowers/specs/2026-04-28-capybara-tea-loop-design.md
 """
 from __future__ import annotations
 
+import random
+
 # ── Identity ────────────────────────────────────────────────────────────
 PRESET_SENTINEL_KEY: str = "capybara_tea"
 
@@ -146,3 +148,20 @@ CAPYBARA_SETTINGS: list[dict] = [
         "palette": "tall-grass green-gold, sunset orange, soft sky lavender, warm cream",
     },
 ]
+
+
+def pick_setting(seed: int | None = None) -> dict:
+    """Random pick from CAPYBARA_SETTINGS, deterministic if seed is given."""
+    rng = random.Random(seed) if seed is not None else random.Random()
+    return rng.choice(CAPYBARA_SETTINGS)
+
+
+def get_setting_by_key(key: str) -> dict:
+    """Lookup by key. Raises ValueError listing valid keys if unknown."""
+    for s in CAPYBARA_SETTINGS:
+        if s["key"] == key:
+            return s
+    valid = sorted(s["key"] for s in CAPYBARA_SETTINGS)
+    raise ValueError(
+        f"unknown setting key: {key!r}. Valid keys: {valid}"
+    )
