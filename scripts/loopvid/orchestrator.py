@@ -44,6 +44,11 @@ class OrchestratorConfig:
     force: bool = False
     dry_run: bool = False
     max_cost: Optional[float] = None
+    seedream_constraints: Optional[str] = None
+    ltx_negative: Optional[str] = None
+    extra_archetype_keys: Optional[set] = None
+    extra_motion_archetypes: Optional[set] = None
+    preset_plan_dict: Optional[dict] = None
 
 
 STEP_ORDER = ("plan", "music", "image", "video", "loop_build", "mux")

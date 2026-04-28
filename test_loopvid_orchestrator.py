@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -111,3 +112,16 @@ def test_only_runs_specified_steps(cfg):
         new_cfg = OrchestratorConfig(**{**cfg.__dict__, "only": ("mux",)})
         run_orchestrator(new_cfg)
         mf.assert_called_once()
+
+
+def test_orchestrator_config_has_new_optional_fields():
+    cfg = OrchestratorConfig(
+        run_id="r", run_dir=Path("/tmp/r"), genre="g", mood="", duration_sec=60,
+        ace_step_endpoint="a", ltx_endpoint="l",
+        runpod_api_key="", openrouter_api_key="", replicate_api_token="",
+    )
+    assert cfg.seedream_constraints is None
+    assert cfg.ltx_negative is None
+    assert cfg.extra_archetype_keys is None
+    assert cfg.extra_motion_archetypes is None
+    assert cfg.preset_plan_dict is None
