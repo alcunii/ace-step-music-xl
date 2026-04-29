@@ -10,7 +10,7 @@ from scripts.loopvid.music_pipeline import (
     run_music_pipeline,
     stitch_segments,
 )
-from scripts.loopvid.constants import ACE_STEP_PRESET
+from scripts.loopvid.constants import ACE_STEP_PRESET, ACE_STEP_TURBO_PRESET
 
 
 def test_build_segment_payload_uses_official_preset():
@@ -92,3 +92,33 @@ def test_run_music_pipeline_skips_existing_segments(tmp_path):
     assert call_count["n"] == 2
     assert (out_dir / "seg_01.mp3").exists()
     assert (out_dir / "seg_02.mp3").exists()
+
+
+def test_build_segment_payload_default_preset_is_base():
+    """No preset arg → falls back to ACE_STEP_PRESET (base)."""
+    p = build_segment_payload(prompt="x", duration=360, seed=42, preset=None)
+    for k, v in ACE_STEP_PRESET.items():
+        assert p["input"][k] == v
+
+
+def test_build_segment_payload_honours_explicit_preset():
+    """preset=ACE_STEP_TURBO_PRESET → 8 steps, cfg=1.0, use_adg=False."""
+    p = build_segment_payload(
+        prompt="x", duration=360, seed=42,
+        preset=ACE_STEP_TURBO_PRESET,
+    )
+    assert p["input"]["inference_steps"] == 8
+    assert p["input"]["guidance_scale"] == 1.0
+    assert p["input"]["use_adg"] is False
+    assert p["input"]["shift"] == 3.0
+    assert p["input"]["infer_method"] == "ode"
+
+
+def test_build_segment_payload_preset_does_not_leak():
+    """Passing turbo preset must NOT mutate the global ACE_STEP_TURBO_PRESET."""
+    snapshot = dict(ACE_STEP_TURBO_PRESET)
+    build_segment_payload(
+        prompt="x", duration=360, seed=42,
+        preset=ACE_STEP_TURBO_PRESET,
+    )
+    assert ACE_STEP_TURBO_PRESET == snapshot

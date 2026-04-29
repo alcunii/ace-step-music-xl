@@ -11,7 +11,13 @@ from scripts.loopvid.constants import ACE_STEP_PRESET, CROSSFADE_SEC
 from scripts.loopvid.runpod_client import run_segment
 
 
-def build_segment_payload(*, prompt: str, duration: int, seed: int) -> dict:
+def build_segment_payload(
+    *, prompt: str, duration: int, seed: int,
+    preset: dict | None = None,
+) -> dict:
+    """Build a text2music payload. Default preset is ACE_STEP_PRESET (base);
+    pass ACE_STEP_TURBO_PRESET (or any other dict) to override."""
+    chosen = preset if preset is not None else ACE_STEP_PRESET
     return {
         "input": {
             "task_type": "text2music",
@@ -23,7 +29,7 @@ def build_segment_payload(*, prompt: str, duration: int, seed: int) -> dict:
             "batch_size": 1,
             "audio_format": "mp3",
             "thinking": False,
-            **ACE_STEP_PRESET,
+            **chosen,
         }
     }
 
