@@ -14,6 +14,20 @@ ACE_STEP_PRESET = {
     "infer_method": "ode",
 }
 
+# ── ACE-Step XL-turbo distilled preset (capybara only) ──
+# Source: HF model card (ACE-Step/acestep-v15-xl-turbo) + INFERENCE.md.
+# Distilled for 8 steps, CFG disabled (guidance_scale=1.0).
+# ambient_eno_45min and lofi_45min keep using ACE_STEP_PRESET (base).
+ACE_STEP_TURBO_PRESET = {
+    "inference_steps": 8,
+    "guidance_scale": 1.0,
+    "shift": 3.0,
+    "use_adg": False,
+    "cfg_interval_start": 0.0,
+    "cfg_interval_end": 1.0,
+    "infer_method": "ode",
+}
+
 # ── Music pipeline (60 min target) ──
 # 11 × 360 − 10 × 30 = 3660s ≈ 61 min. Final mux trims to exactly 3600s.
 SEGMENT_COUNT_60MIN = 11
@@ -62,6 +76,24 @@ LTX_NEGATIVE_PROMPT = (
     "frame stutter, ghosting, motion smear, double exposure, "
     "morphing, warping, melting, glitch"
 )
+
+# ── Genre anchors — single-artist allowlist for ACE-Step prompts ──
+# The LLM planner picks EXACTLY ONE anchor per run. Locked across all
+# 11 segments. Curated to artists/albums almost certainly present in
+# ACE-Step's training data (web-scale music corpus).
+GENRE_ANCHORS = {
+    "lofi": ["Nujabes", "J Dilla", "Idealism", "Tomppabeats"],
+    "jazz": ["Miles Davis", "Bill Evans", "John Coltrane", "Chet Baker"],
+    "ambient": ["Brian Eno", "Stars of the Lid", "Tim Hecker", "Hammock"],
+    "neoclassical": ["Ludovico Einaudi", "Nils Frahm", "Max Richter", "Ólafur Arnalds"],
+    "synthwave": ["Tycho", "Com Truise", "Kavinsky", "FM-84"],
+    "downtempo": ["Bonobo", "Boards of Canada", "Emancipator", "Thievery Corporation"],
+}
+
+# Caps enforced by plan_schema. Single-anchor palette stays terse; per-segment
+# descriptor is one short phase phrase, not a stack of 2-3 adjectives.
+MUSIC_PALETTE_MAX_CHARS = 80
+MUSIC_SEGMENT_DESCRIPTOR_MAX_CHARS = 30
 
 # ── Genre archetypes — closed set; LLM customizes within these ──
 GENRE_ARCHETYPES = {

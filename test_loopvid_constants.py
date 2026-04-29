@@ -5,9 +5,13 @@ import hashlib
 
 from scripts.loopvid.constants import (
     ACE_STEP_PRESET,
+    ACE_STEP_TURBO_PRESET,
     SEEDREAM_HARD_CONSTRAINTS,
     LTX_NEGATIVE_PROMPT,
+    GENRE_ANCHORS,
     GENRE_ARCHETYPES,
+    MUSIC_PALETTE_MAX_CHARS,
+    MUSIC_SEGMENT_DESCRIPTOR_MAX_CHARS,
     SEGMENT_DURATION_SEC,
     SEGMENT_COUNT_60MIN,
     CROSSFADE_SEC,
@@ -31,6 +35,21 @@ def test_ace_step_preset_matches_official():
         "guidance_scale": 8.0,
         "shift": 3.0,
         "use_adg": True,
+        "cfg_interval_start": 0.0,
+        "cfg_interval_end": 1.0,
+        "infer_method": "ode",
+    }
+
+
+def test_ace_step_turbo_preset_matches_distilled_recipe():
+    """XL-turbo distilled inference recipe — see HF model card.
+
+    Update only after a deliberate audit (e.g. upstream model card change)."""
+    assert ACE_STEP_TURBO_PRESET == {
+        "inference_steps": 8,
+        "guidance_scale": 1.0,
+        "shift": 3.0,
+        "use_adg": False,
         "cfg_interval_start": 0.0,
         "cfg_interval_end": 1.0,
         "infer_method": "ode",
@@ -85,3 +104,27 @@ def test_music_segment_constants_yield_at_least_60_minutes():
 def test_loop_seam_constants_are_short():
     assert 0 < INTER_CLIP_XFADE_SEC <= 1.0
     assert 0 < LOOP_SEAM_XFADE_SEC <= 1.0
+
+
+def test_genre_anchors_cover_supported_genres():
+    expected = {"lofi", "jazz", "ambient", "neoclassical", "synthwave", "downtempo"}
+    assert set(GENRE_ANCHORS.keys()) == expected
+    for genre, anchors in GENRE_ANCHORS.items():
+        assert isinstance(anchors, list)
+        assert 1 <= len(anchors) <= 6, f"{genre}: keep allowlist tight"
+        for a in anchors:
+            assert isinstance(a, str) and a.strip() == a
+
+
+def test_music_caps_are_tight_enough_to_block_old_bloat():
+    # The old lofi palette was ~360 chars. The new cap must reject it.
+    old_bloat = (
+        "Dusty vinyl crackle, warm analog Rhodes chords, muted sub-bass, "
+        "soft jazz-inflected guitar licks, bit-crushed drum machine, "
+        "rain field recordings, distant thunder, warm saturation, tape hiss, "
+        "mellow piano melodies, felt hammers, low-pass filters, "
+        "sidechain compression, nostalgic atmosphere."
+    )
+    assert len(old_bloat) > MUSIC_PALETTE_MAX_CHARS
+    # And keep the descriptor cap small enough to forbid stacked adjective lists.
+    assert MUSIC_SEGMENT_DESCRIPTOR_MAX_CHARS <= 40
