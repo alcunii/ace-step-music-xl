@@ -19,12 +19,20 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import json
 import os
 import sys
 from pathlib import Path
 
 # Ensure the loopvid package is importable when this script is run directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from loopvid.dotenv import load_dotenv  # type: ignore  # noqa: E402
+
+# Auto-load repo-root .env so users can put OPENROUTER_API_KEY, RUNPOD_API_KEY
+# etc. there instead of exporting them in every shell.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_REPO_ROOT / ".env")
 
 from loopvid.capybara_preset import (  # type: ignore
     CAPYBARA_GENRE,
@@ -36,15 +44,17 @@ from loopvid.capybara_preset import (  # type: ignore
     get_setting_by_key,
     pick_setting,
 )
+from loopvid.constants import ACE_STEP_TURBO_PRESET  # type: ignore
 from loopvid.cost import cost_breakdown_lines, estimate_run_cost  # type: ignore
 from loopvid.orchestrator import OrchestratorConfig, run_orchestrator  # type: ignore
 from loopvid.rollback import (  # type: ignore
     RollbackError, rollback_forensic, rollback_hard, rollback_with_keep,
 )
+from loopvid.youtube_metadata import generate_youtube_metadata  # type: ignore
 
 
 DEFAULT_LTX_ENDPOINT = "1g0pvlx8ar6qns"
-DEFAULT_ACE_STEP_ENDPOINT = "nwqnd0duxc6o38"
+DEFAULT_ACE_STEP_ENDPOINT = "6wu84nn1hsiawg"  # XL-turbo (was nwqnd0duxc6o38 base)
 DEFAULT_OUT_DIR = Path(__file__).resolve().parent.parent / "out" / "capybara_tea"
 
 
@@ -98,7 +108,35 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--keep", help="--rollback: comma-separated keepers (music,image,video)")
     p.add_argument("--hard", action="store_true", help="--rollback: hard delete (with confirm)")
 
+    p.add_argument("--no-meta", action="store_true",
+                   help="Skip generating final.meta.json (YouTube title/description)")
+
     return p
+
+
+def _write_youtube_meta(final_path: Path, setting: dict, duration_sec: int) -> None:
+    """Generate and write `<final>.meta.json` next to the rendered MP4.
+
+    Soft-fails: prints a warning and returns instead of raising. The video is
+    already rendered; metadata can be regenerated later with a small script.
+    """
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        print("⚠ OPENROUTER_API_KEY not set; skipping meta.json generation. "
+              "Set the env var or pass --no-meta to silence this warning.")
+        return
+    meta_path = final_path.with_suffix(".meta.json")
+    try:
+        meta = generate_youtube_metadata(
+            setting=setting, duration_sec=duration_sec, api_key=api_key,
+        )
+    except Exception as e:  # noqa: BLE001 — pipeline must not crash on meta failure
+        print(f"⚠ youtube metadata generation failed ({e}); video is fine. "
+              f"Re-run with `python3 -m scripts.loopvid.youtube_metadata` later.")
+        return
+    meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False))
+    print(f"✓ meta.json: {meta_path}")
+    print(f"  title: {meta['title']}")
 
 
 def cmd_rollback(args, out_dir: Path) -> int:
@@ -150,6 +188,7 @@ def cmd_run(args, out_dir: Path) -> int:
         extra_archetype_keys={PRESET_SENTINEL_KEY},
         extra_motion_archetypes={PRESET_SENTINEL_KEY},
         preset_plan_dict=plan_dict,
+        ace_step_preset=ACE_STEP_TURBO_PRESET,
     )
 
     if not args.dry_run and not args.yes:
@@ -164,6 +203,8 @@ def cmd_run(args, out_dir: Path) -> int:
 
     final = run_orchestrator(cfg)
     print(f"Done: {final}")
+    if not args.dry_run and not args.no_meta:
+        _write_youtube_meta(final, setting, args.duration)
     return 0
 
 
