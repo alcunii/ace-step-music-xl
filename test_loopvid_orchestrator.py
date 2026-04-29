@@ -172,3 +172,31 @@ def test_preset_plan_dict_skips_llm(tmp_path, monkeypatch):
     assert (tmp_path / "r" / "plan.json").exists()
     saved = json.loads((tmp_path / "r" / "plan.json").read_text())
     assert saved["music_palette"] == preset["music_palette"]
+
+
+def test_orchestrator_config_passes_ace_step_preset(tmp_path):
+    """cfg.ace_step_preset is set when caller passes it."""
+    from scripts.loopvid.constants import ACE_STEP_TURBO_PRESET
+    from scripts.loopvid.orchestrator import OrchestratorConfig
+
+    cfg = OrchestratorConfig(
+        run_id="test", run_dir=tmp_path, genre="lofi", mood="calm",
+        duration_sec=60,
+        ace_step_endpoint="ep", ltx_endpoint="lt",
+        runpod_api_key="k", openrouter_api_key="", replicate_api_token="",
+        ace_step_preset=ACE_STEP_TURBO_PRESET,
+    )
+    assert cfg.ace_step_preset is ACE_STEP_TURBO_PRESET
+
+
+def test_orchestrator_config_default_ace_step_preset_is_none(tmp_path):
+    """No ace_step_preset → None → music_pipeline falls back to ACE_STEP_PRESET."""
+    from scripts.loopvid.orchestrator import OrchestratorConfig
+
+    cfg = OrchestratorConfig(
+        run_id="t", run_dir=tmp_path, genre="lofi", mood="calm",
+        duration_sec=60,
+        ace_step_endpoint="ep", ltx_endpoint="lt",
+        runpod_api_key="k", openrouter_api_key="", replicate_api_token="",
+    )
+    assert cfg.ace_step_preset is None

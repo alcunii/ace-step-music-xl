@@ -50,6 +50,7 @@ class OrchestratorConfig:
     extra_archetype_keys: Optional[set] = None
     extra_motion_archetypes: Optional[set] = None
     preset_plan_dict: Optional[dict] = None
+    ace_step_preset: Optional[dict] = None  # default None → ACE_STEP_PRESET (base)
 
 
 STEP_ORDER = ("plan", "music", "image", "video", "loop_build", "mux")
@@ -154,6 +155,7 @@ def run_orchestrator(cfg: OrchestratorConfig) -> Path:
             prompts=prompts, duration_sec=SEGMENT_DURATION_SEC, seeds=seeds,
             out_dir=music_dir,
             endpoint_id=cfg.ace_step_endpoint, api_key=cfg.runpod_api_key,
+            preset=cfg.ace_step_preset,
             on_segment_done=lambda i, p: _print(f"  ✓ seg {i} ({p.stat().st_size:,} B)"),
         )
         if not master_path.exists() and seg_paths:
