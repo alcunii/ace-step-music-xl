@@ -48,9 +48,15 @@ def _save_segment(output: dict, target: Path) -> None:
 def run_music_pipeline(
     *, prompts: list[str], duration_sec: int, seeds: list[int],
     out_dir: Path, endpoint_id: str, api_key: str,
+    preset: dict | None = None,
     on_segment_done: Optional[Callable[[int, Path], None]] = None,
 ) -> list[Path]:
-    """Submit N segments sequentially. Skips canonical files that already exist."""
+    """Submit N segments sequentially. Skips canonical files that already exist.
+
+    preset: optional override for the ACE-Step inference preset.
+            Default = ACE_STEP_PRESET (base XL high-quality).
+            Pass ACE_STEP_TURBO_PRESET for the distilled turbo variant.
+    """
     if len(prompts) != len(seeds):
         raise ValueError(f"prompts ({len(prompts)}) and seeds ({len(seeds)}) must align")
     out_dir = Path(out_dir)
@@ -61,7 +67,7 @@ def run_music_pipeline(
         if target.exists():
             paths.append(target)
             continue
-        payload = build_segment_payload(prompt=prompt, duration=duration_sec, seed=seed)
+        payload = build_segment_payload(prompt=prompt, duration=duration_sec, seed=seed, preset=preset)
         body = run_segment(
             endpoint_id=endpoint_id, api_key=api_key, payload=payload,
             label=f"music seg {i}",

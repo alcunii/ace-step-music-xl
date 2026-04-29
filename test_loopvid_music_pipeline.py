@@ -122,3 +122,27 @@ def test_build_segment_payload_preset_does_not_leak():
         preset=ACE_STEP_TURBO_PRESET,
     )
     assert ACE_STEP_TURBO_PRESET == snapshot
+
+
+def test_run_music_pipeline_forwards_preset(tmp_path):
+    """run_music_pipeline(preset=...) → build_segment_payload(preset=...)."""
+    from unittest.mock import patch
+    with patch(
+        "scripts.loopvid.music_pipeline.run_segment",
+    ) as mock_run, patch(
+        "scripts.loopvid.music_pipeline.build_segment_payload",
+        wraps=build_segment_payload,
+    ) as mock_build:
+        # Make run_segment short-circuit by raising — we only care about the
+        # preset forwarding, not the actual segment write.
+        mock_run.side_effect = RuntimeError("stop after one call")
+        try:
+            run_music_pipeline(
+                prompts=["x"], duration_sec=360, seeds=[42],
+                out_dir=tmp_path, endpoint_id="ep", api_key="k",
+                preset=ACE_STEP_TURBO_PRESET,
+            )
+        except RuntimeError:
+            pass
+        # build_segment_payload should have been called with preset=turbo
+        assert mock_build.call_args.kwargs.get("preset") == ACE_STEP_TURBO_PRESET
